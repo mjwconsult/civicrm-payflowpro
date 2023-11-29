@@ -31,3 +31,13 @@ function payflowpro_civicrm_install() {
 function payflowpro_civicrm_enable() {
   _payflowpro_civix_civicrm_enable();
 }
+
+/**
+ * Implements hook_civicrm_check().
+ *
+ * @throws \CiviCRM_API3_Exception
+ */
+function payflowpro_civicrm_check(&$messages) {
+  $checks = new \Civi\PayflowPro\Check($messages);
+  $messages = $checks->checkRequirements();
+}
