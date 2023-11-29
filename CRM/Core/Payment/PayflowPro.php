@@ -320,6 +320,9 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
     }
     // get the result code to validate.
     $result_code = $nvpArray['RESULT'];
+    if ($result_code > 0) {
+      \Civi::log('payflowpro')->error('payflopro: ' . $nvpArray['RESPMSG']);
+    }
     /*debug
     echo "<p>Params array</p><br>";
     print_r($params);
@@ -370,7 +373,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         throw new PaymentProcessorException('Invalid credit card information. Please re-enter.', 9011);
 
       case 26:
-        throw new PaymentProcessorException('You have not configured your payment processor with the correct credentials. Make sure you have provided both the <vendor> and the <user> variables ', 9012);
+        throw new PaymentProcessorException('You have not configured your payment processor with the correct credentials. Make sure you have provided both the "vendor" and the "user" variables ', 9012);
 
       default:
         throw new PaymentProcessorException('Error - from payment processor: [' . $result_code . " " . $nvpArray['RESPMSG'] . "] ", 9013);
