@@ -18,6 +18,8 @@ use CRM_Payflowpro_ExtensionUtil as E;
  */
 class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
 
+  use CRM_Core_Payment_MJWTrait;
+
   /**
    * @var \GuzzleHttp\Client
    */
@@ -46,6 +48,32 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
    */
   public function __construct($mode, &$paymentProcessor) {
     $this->_paymentProcessor = $paymentProcessor;
+    $this->api = new \Civi\PayflowPro\Api($this);
+  }
+
+  /**
+   * This public function checks to see if we have the right processor config values set
+   *
+   * NOTE: Called by Events and Contribute to check config params are set prior to trying
+   *  register any credit card details
+   *
+   * @return string|null
+   *   the error message if any, null if OK
+   */
+  public function checkConfig() {
+    $errorMsg = [];
+    if (empty($this->_paymentProcessor['user_name'])) {
+      $errorMsg[] = ' ' . ts('ssl_merchant_id is not set for this payment processor');
+    }
+
+    if (empty($this->_paymentProcessor['url_site'])) {
+      $errorMsg[] = ' ' . ts('URL is not set for %1', [1 => $this->_paymentProcessor['name']]);
+    }
+
+    if (!empty($errorMsg)) {
+      return implode('<p>', $errorMsg);
+    }
+    return NULL;
   }
 
   /*
@@ -83,7 +111,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
     /*
      * define variables for connecting with the gateway
      */
-    $payflowApi = new \Civi\PayflowPro\Api($this->_paymentProcessor);
+    $payflowApi = new \Civi\PayflowPro\Api($this);
 
     // ideally this id would be passed through into this class as
     // part of the paymentProcessor
@@ -314,29 +342,16 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
     }
   }
 
+  public function supportsRecurring() {
+    return TRUE;
+  }
+
   /**
-   * This public function checks to see if we have the right processor config values set
-   *
-   * NOTE: Called by Events and Contribute to check config params are set prior to trying
-   *  register any credit card details
-   *
-   * @return string|null
-   *   the error message if any, null if OK
+   * We can edit stripe recurring contributions
+   * @return bool
    */
-  public function checkConfig() {
-    $errorMsg = [];
-    if (empty($this->_paymentProcessor['user_name'])) {
-      $errorMsg[] = ' ' . ts('ssl_merchant_id is not set for this payment processor');
-    }
-
-    if (empty($this->_paymentProcessor['url_site'])) {
-      $errorMsg[] = ' ' . ts('URL is not set for %1', [1 => $this->_paymentProcessor['name']]);
-    }
-
-    if (!empty($errorMsg)) {
-      return implode('<p>', $errorMsg);
-    }
-    return NULL;
+  public function supportsEditRecurringContribution() {
+    return TRUE;
   }
 
   /**
@@ -393,16 +408,13 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
     }
 
     // Call the API to cancel the subscription
-    $payflowApi = new \Civi\PayflowPro\Api($this->_paymentProcessor);
+    $payflowApi = new \Civi\PayflowPro\Api($this);
     $payflow_query_array = $payflowApi->getQueryArrayAuth();
     $payflow_query_array['TRXTYPE'] = 'R';
     $payflow_query_array['ACTION'] = 'C';
     $payflow_query_array['ORIGPROFILEID'] = $propertyBag->getRecurProcessorID();
 
     $payflow_query = $payflowApi->convert_to_nvp($payflow_query_array);
-
-    // ie. url at payment processor to submit to.
-    $submiturl = $this->_paymentProcessor['url_site'];
 
     $responseData = $payflowApi->submit_transaction($payflow_query);
 
@@ -417,5 +429,71 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         throw new PaymentProcessorException(E::ts('Could not cancel PayflowPro subscription: %1', [1 => $nvpArray['RESPMSG']]));
     }
   }
+
+  /**
+   * Change the amount of the recurring payment.
+   *
+   * @param string $message
+   * @param array $params
+   *
+   * @return bool|object
+   *
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
+   */
+  public function changeSubscriptionAmount(&$message = '', $params = []) {
+    // We only support the following params: amount
+    try {
+      $propertyBag = $this->beginChangeSubscriptionAmount($params);
+
+      // Get the PayflowPro subscription
+
+      // Check if amount has actually changed!
+      /*        if (Money::of($calculatedItem['amount'], mb_strtoupper($calculatedItem['currency']))
+                ->isAmountAndCurrencyEqualTo(Money::of($propertyBag->getAmount(), $propertyBag->getCurrency()))) {
+                throw new PaymentProcessorException('Amount is the same as before!');
+              }
+              */
+    }
+    catch (Exception $e) {
+      // On ANY failure, throw an exception which will be reported back to the user.
+      $this->api->logError('Update Subscription failed for RecurID: ' . $propertyBag->getContributionRecurID() . ' Error: ' . $e->getMessage());
+      throw new PaymentProcessorException('Update Subscription Failed: ' . $e->getMessage(), $e->getCode(), $params);
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Get an array of the fields that can be edited on the recurring contribution.
+   *
+   * Some payment processors support editing the amount and other scheduling details of recurring payments, especially
+   * those which use tokens. Others are fixed. This function allows the processor to return an array of the fields that
+   * can be updated from the contribution recur edit screen.
+   *
+   * The fields are likely to be a subset of these
+   *  - 'amount',
+   *  - 'installments',
+   *  - 'frequency_interval',
+   *  - 'frequency_unit',
+   *  - 'cycle_day',
+   *  - 'next_sched_contribution_date',
+   *  - 'end_date',
+   * - 'failure_retry_day',
+   *
+   * The form does not restrict which fields from the contribution_recur table can be added (although if the html_type
+   * metadata is not defined in the xml for the field it will cause an error.
+   *
+   * Open question - would it make sense to return membership_id in this - which is sometimes editable and is on that
+   * form (UpdateSubscription).
+   *
+   * @return array
+   */
+  public function getEditableRecurringScheduleFields() {
+    if ($this->supports('changeSubscriptionAmount')) {
+      return ['amount'];
+    }
+    return [];
+  }
+
 
 }

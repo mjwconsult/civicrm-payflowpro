@@ -12,12 +12,16 @@ class Api {
    */
   protected \CRM_Core_Payment_PayflowPro $paymentProcessor;
 
-  public function __construct($paymentProcessor) {
+  public function __construct(\CRM_Core_Payment_PayflowPro $paymentProcessor) {
     $this->paymentProcessor = $paymentProcessor;
   }
 
   private function getPaymentProcessor(): \CRM_Core_Payment_PayflowPro {
     return $this->paymentProcessor;
+  }
+
+  private function getPaymentProcessorArray(): array {
+    return $this->paymentProcessor->getPaymentProcessor();
   }
 
   /**
@@ -27,20 +31,20 @@ class Api {
    */
   public function getUser(): string {
     //if you have not set up a separate user account the vendor name is used as the username
-    if (!$this->getPaymentProcessor()['subject']) {
-      return $this->getPaymentProcessor()['user_name'];
+    if (!$this->getPaymentProcessorArray()['subject']) {
+      return $this->getPaymentProcessorArray()['user_name'];
     }
     else {
-      return $this->getPaymentProcessor()['subject'];
+      return $this->getPaymentProcessorArray()['subject'];
     }
   }
 
   public function getQueryArrayAuth() {
     return [
       'USER' => $this->getUser(),
-      'VENDOR' => $this->getPaymentProcessor()['user_name'],
-      'PARTNER' => $this->getPaymentProcessor()['signature'],
-      'PWD' => $this->getPaymentProcessor()['password'],
+      'VENDOR' => $this->getPaymentProcessorArray()['user_name'],
+      'PARTNER' => $this->getPaymentProcessorArray()['signature'],
+      'PWD' => $this->getPaymentProcessorArray()['password'],
     ];
   }
 
@@ -69,7 +73,7 @@ class Api {
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
   public function submit_transaction($payflow_query) {
-    $submiturl = $this->getPaymentProcessor()['url_site'];
+    $submiturl = $this->getPaymentProcessorArray()['url_site'];
     // get data ready for API
     $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Guzzle';
     // Here's your custom headers; adjust appropriately for your setup:
@@ -103,7 +107,7 @@ class Api {
     //$headers[] = "X-VPS-VIT-Client-Architecture: x86";
     // Application version
     //$headers[] = "X-VPS-VIT-Integration-Version: 0.01";
-    $response = $this->getPaymentProcessor()->getGuzzleClient()->post($submiturl, [
+    $response = $this->paymentProcessor->getGuzzleClient()->post($submiturl, [
       'body' => $payflow_query,
       'headers' => $headers,
       'curl' => [
@@ -232,6 +236,24 @@ class Api {
         throw new PaymentProcessorException('Error - from payment processor: [' . $result_code . " " . $nvpArray['RESPMSG'] . "] ", 9013);
     }
 
+  }
+
+  public function logInfo(string $message) {
+    $this->log('info', $message);
+  }
+
+  public function logError(string $message) {
+    $this->log('error', $message);
+  }
+
+  public function logDebug(string $message) {
+    $this->log('debug', $message);
+  }
+
+  private function log(string $level, string $message) {
+    $channel = 'payflowpro';
+    $prefix = $channel . '(' . $this->getPaymentProcessor()->getID() . '): ';
+    \Civi::log($channel)->$level($prefix . $message);
   }
 
 }
