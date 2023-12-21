@@ -122,7 +122,8 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     $this->createFixtures($params);
     $params['contribution_id'] = $this->contributionID;
     $params['contact_id'] = $this->contactID;
-    $this->processor->doPayment($params);
+    $doPaymentResult = $this->processor->doPayment($params);
+    $this->assertEquals('Completed', $doPaymentResult['payment_status']);
     $this->assertEquals($this->getExpectedSinglePaymentRequests($params['invoiceID']), $this->getRequestBodies());
   }
 
@@ -181,7 +182,8 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     $params['contribution_id'] = $this->contributionID;
     $params['contact_id'] = $this->contactID;
     $params['contribution_recur_id'] = $this->contributionRecurID;
-    $this->processor->doPayment($params);
+    $doPaymentResult = $this->processor->doPayment($params);
+    $this->assertEquals('Completed', $doPaymentResult['payment_status']);
     $this->assertEquals($this->getExpectedRecurringPaymentRequests($params['invoiceID']), $this->getRequestBodies());
   }
 
