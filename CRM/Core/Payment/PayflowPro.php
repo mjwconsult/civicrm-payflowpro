@@ -329,6 +329,82 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
     }
   }
 
+  /**
+   * Submit a refund payment
+   *
+   * @param array $params
+   *   Assoc array of input parameters for this transaction.
+   *
+   * @return array
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
+   * @throws \Brick\Money\Exception\UnknownCurrencyException
+   */
+  public function doRefund(&$params) {
+    $requiredParams = ['trxn_id', 'amount'];
+    foreach ($requiredParams as $required) {
+      if (!isset($params[$required])) {
+        $message = 'doRefund: Missing mandatory parameter: ' . $required;
+        $this->api->logError($message);
+        throw new PaymentProcessorException($message);
+      }
+    }
+
+    $propertyBag = PropertyBag::cast($params);
+
+    // @todo Build parameters for Payflow Refund API
+    // @todo: Do we need to machinemoney format? ie. 1024.00 or is 1024 ok for API?
+    $refundParams['amount'] = \Civi::format()->machineMoney($propertyBag->getAmount());
+    $refundParams['trxn_id'] = $params['trxn_id'];
+
+    try {
+      // @todo call the payflow refund API
+      $refundResult['status'] = 'x';
+      $refundResult['id'] = 'y';
+    }
+    catch (Exception $e) {
+      throw new PaymentProcessorException($e->getMessage());
+    }
+
+    switch ($refundResult['status']) {
+      case 'pending':
+        $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending');
+        $refundStatusName = 'Pending';
+        break;
+
+      case 'succeeded':
+        $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
+        $refundStatusName = 'Completed';
+        break;
+
+      case 'failed':
+        $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Failed');
+        $refundStatusName = 'Failed';
+        break;
+
+      case 'canceled':
+        $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Cancelled');
+        $refundStatusName = 'Cancelled';
+        break;
+    }
+
+    $refundParams = [
+      'refund_trxn_id' => $refundResult['id'],
+      'refund_status_id' => $refundStatus,
+      'refund_status' => $refundStatusName,
+      'fee_amount' => 0,
+    ];
+    return $refundParams;
+  }
+
+  /**
+   * Does this payment processor support refund?
+   *
+   * @return bool
+   */
+  public function supportsRefund() {
+    return TRUE;
+  }
+
   public function supportsRecurring() {
     return TRUE;
   }
