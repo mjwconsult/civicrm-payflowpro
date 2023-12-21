@@ -35,6 +35,21 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
    */
   public $ids;
 
+  /**
+   * @var int
+   */
+  protected int $contactID;
+
+  /**
+   * @var int
+   */
+  protected int $contributionID;
+
+  /**
+   * @var int
+   */
+  protected int $contributionRecurID;
+
   public function setUpHeadless() {
     // Civi\Test has many helpers, like install(), uninstall(), sql(), and sqlFile().
     // See: https://docs.civicrm.org/dev/en/latest/testing/phpunit/#civitest
@@ -109,6 +124,31 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     $params['contact_id'] = $this->contactID;
     $this->processor->doPayment($params);
     $this->assertEquals($this->getExpectedSinglePaymentRequests($params['invoiceID']), $this->getRequestBodies());
+  }
+
+  /**
+   * Test making a once off payment
+   */
+  public function testSinglePaymentZeroAmount(): void {
+    $this->setupMockHandler();
+    $params = $this->getBillingParams();
+    $params['amount'] = 0.00;
+    $params['currency'] = 'AUD';
+    $params['description'] = 'Test Contribution';
+    $params['invoiceID'] = md5(rand());
+    $params['email'] = 'unittesteway@civicrm.org';
+    $params['ip_address'] = '127.0.0.1';
+    $params['state_province'] = 'NSW';
+    $params['country'] = 'AU';
+    $params['contributionType_accounting_code'] = 4200;
+    $params['installments'] = 1;
+
+    $this->createFixtures($params);
+    $params['contribution_id'] = $this->contributionID;
+    $params['contact_id'] = $this->contactID;
+    $doPaymentResult = $this->processor->doPayment($params);
+    $this->assertEquals('Completed', $doPaymentResult['payment_status']);
+    $this->assertEquals([], $this->getRequestBodies());
   }
 
   /**
