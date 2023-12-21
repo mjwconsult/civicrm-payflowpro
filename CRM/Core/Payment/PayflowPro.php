@@ -113,21 +113,6 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
      */
     $payflowApi = new \Civi\PayflowPro\Api($this);
 
-    // ideally this id would be passed through into this class as
-    // part of the paymentProcessor
-    //object with the other variables. It seems inefficient to re-query to get it.
-    //$params['processor_id'] = CRM_Core_DAO::getFieldValue(
-    // 'CRM_Contribute_DAO_ContributionP
-    //age',$params['contributionPageID'],  'payment_processor_id' );
-
-    /*
-     *Create the array of variables to be sent to the processor from the $params array
-     * passed into this function
-     *
-     * NB: PayFlowPro does not accept URL Encoded parameters.
-     * Particularly problematic when amount contains grouping character: e.g 1,234.56 will return [4 - Invalid Amount]
-     */
-
     $payflow_query_array = array_merge(
       $payflowApi->getQueryArrayAuth(),
       [
@@ -139,25 +124,26 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'CVV2' => $params['cvv2'],
         'EXPDATE' => urlencode(sprintf('%02d', (int) $params['month']) . substr($params['year'], 2, 2)),
         'ACCTTYPE' => urlencode($params['credit_card_type']),
-        'AMT' => $this->getAmount($params),
-        'CURRENCY' => urlencode($params['currency']),
-        'FIRSTNAME' => $params['billing_first_name'],
+        // @todo: Do we need to machinemoney format? ie. 1024.00 or is 1024 ok for API?
+        'AMT' => \Civi::format()->machineMoney($propertyBag->getAmount()),
+        'CURRENCY' => urlencode($propertyBag->getCurrency()),
+        'FIRSTNAME' => $propertyBag->has('firstName') ? $propertyBag->getFirstName() : '',
         //credit card name
-        'LASTNAME' => $params['billing_last_name'],
+        'LASTNAME' => $propertyBag->has('lastName') ? $propertyBag->getLastName() : '',
         //credit card name
-        'STREET' => $params['street_address'],
-        'CITY' => urlencode($params['city']),
-        'STATE' => urlencode($params['state_province']),
-        'ZIP' => urlencode($params['postal_code']),
-        'COUNTRY' => urlencode($params['country']),
-        'EMAIL' => $params['email'],
+        'STREET' => $propertyBag->getBillingStreetAddress(),
+        'CITY' => urlencode($propertyBag->getBillingCity()),
+        'STATE' => urlencode($propertyBag->getBillingStateProvince()),
+        'ZIP' => urlencode($propertyBag->getBillingPostalCode()),
+        'COUNTRY' => urlencode($propertyBag->getBillingCountry()),
+        'EMAIL' => $propertyBag->getEmail(),
         'CUSTIP' => urlencode($params['ip_address']),
         'COMMENT1' => urlencode($params['contributionType_accounting_code']),
         'COMMENT2' => $this->_paymentProcessor['is_test'] ? 'test' : 'live',
-        'INVNUM' => urlencode($params['invoiceID']),
-        'ORDERDESC' => urlencode($params['description']),
+        'INVNUM' => urlencode($propertyBag->getInvoiceID()),
+        'ORDERDESC' => urlencode($propertyBag->getDescription()),
         'VERBOSITY' => 'MEDIUM',
-        'BILLTOCOUNTRY' => urlencode($params['country']),
+        'BILLTOCOUNTRY' => urlencode($propertyBag->getBillingCountry()),
       ]);
 
     if ($params['installments'] == 1) {
@@ -168,14 +154,15 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
 
       $payflow_query_array['TRXTYPE'] = 'R';
       $payflow_query_array['OPTIONALTRX'] = 'S';
-      $payflow_query_array['OPTIONALTRXAMT'] = $this->getAmount($params);
+      // @todo: Do we need to machinemoney format? ie. 1024.00 or is 1024 ok for API?
+      $payflow_query_array['OPTIONALTRXAMT'] = \Civi::format()->machineMoney($propertyBag->getAmount());
       //Amount of the initial Transaction. Required
       $payflow_query_array['ACTION'] = 'A';
       //A for add recurring (M-modify,C-cancel,R-reactivate,I-inquiry,P-payment
       $payflow_query_array['PROFILENAME'] = urlencode('RegularContribution');
       //A for add recurring (M-modify,C-cancel,R-reactivate,I-inquiry,P-payment
       if ($params['installments'] > 0) {
-        $payflow_query_array['TERM'] = $params['installments'] - 1;
+        $payflow_query_array['TERM'] = $propertyBag->getRecurInstallments() - 1;
         //ie. in addition to the one happening with this transaction
       }
       // $payflow_query_array['COMPANYNAME']
@@ -193,7 +180,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       //attempts occur until the term is complete.
       // $payflow_query_array['RETRYNUMDAYS'] = (not set as can't assume business rule
 
-      $interval = $params['frequency_interval'] . " " . $params['frequency_unit'];
+      $interval = $propertyBag->getRecurFrequencyInterval() . " " . $propertyBag->getRecurFrequencyUnit();
       switch ($interval) {
         case '1 week':
           $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 7,
@@ -204,8 +191,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           );
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "WEEK";
-          $params['frequency_unit'] = "week";
-          $params['frequency_interval'] = 1;
+          $propertyBag->setRecurFrequencyUnit('week');
+          $propertyBag->setRecurFrequencyInterval(1);
           break;
 
         case '2 weeks':
@@ -214,8 +201,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           );
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "BIWK";
-          $params['frequency_unit'] = "week";
-          $params['frequency_interval'] = 2;
+          $propertyBag->setRecurFrequencyUnit('week');
+          $propertyBag->setRecurFrequencyInterval(2);
           break;
 
         case '4 weeks':
@@ -225,8 +212,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           );
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "FRWK";
-          $params['frequency_unit'] = "week";
-          $params['frequency_interval'] = 4;
+          $propertyBag->setRecurFrequencyUnit('week');
+          $propertyBag->setRecurFrequencyInterval(4);
           break;
 
         case '1 month':
@@ -239,8 +226,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           );
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "MONT";
-          $params['frequency_unit'] = "month";
-          $params['frequency_interval'] = 1;
+          $propertyBag->setRecurFrequencyUnit('month');
+          $propertyBag->setRecurFrequencyInterval(1);
           break;
 
         case '3 months':
@@ -252,8 +239,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           );
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "QTER";
-          $params['frequency_unit'] = "month";
-          $params['frequency_interval'] = 3;
+          $propertyBag->setRecurFrequencyUnit('month');
+          $propertyBag->setRecurFrequencyInterval(3);
           break;
 
         case '6 months':
@@ -267,8 +254,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']
           );
           $payflow_query_array['PAYPERIOD'] = "SMYR";
-          $params['frequency_unit'] = "month";
-          $params['frequency_interval'] = 6;
+          $propertyBag->setRecurFrequencyUnit('month');
+          $propertyBag->setRecurFrequencyInterval(6);
           break;
 
         case '1 year':
@@ -281,21 +268,21 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           );
           $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "YEAR";
-          $params['frequency_unit'] = "year";
-          $params['frequency_interval'] = 1;
+          $propertyBag->setRecurFrequencyUnit('year');
+          $propertyBag->setRecurFrequencyInterval(1);
           break;
       }
     }
 
-    CRM_Utils_Hook::alterPaymentProcessorParams($this, $params, $payflow_query_array);
+    CRM_Utils_Hook::alterPaymentProcessorParams($this, $propertyBag, $payflow_query_array);
     $payflow_query = $payflowApi->convert_to_nvp($payflow_query_array);
 
     /*
      * Check to see if we have a duplicate before we send
      */
-    if ($this->checkDupe($params['invoiceID'], $params['contributionID'] ?? NULL)) {
-      throw new PaymentProcessorException('It appears that this transaction is a duplicate.  Have you already submitted the form once?  If so there may have been a connection problem.  Check your email for a receipt.  If you do not receive a receipt within 2 hours you can try your transaction again.  If you continue to have problems please contact the site administrator.', 9003);
-    }
+    // if ($this->checkDupe($params['invoiceID'], $params['contributionID'] ?? NULL)) {
+    //  throw new PaymentProcessorException('It appears that this transaction is a duplicate.  Have you already submitted the form once?  If so there may have been a connection problem.  Check your email for a receipt.  If you do not receive a receipt within 2 hours you can try your transaction again.  If you continue to have problems please contact the site administrator.', 9003);
+    //}
 
     $responseData = $payflowApi->submit_transaction($payflow_query);
 

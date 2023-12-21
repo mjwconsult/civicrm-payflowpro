@@ -40,6 +40,7 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     // See: https://docs.civicrm.org/dev/en/latest/testing/phpunit/#civitest
     return \Civi\Test::headless()
       ->installMe(__DIR__)
+      ->install('mjwshared')
       ->apply();
   }
 
@@ -54,6 +55,32 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     parent::tearDown();
   }
 
+  private function createFixtures(array $params) {
+    $this->contactID = \Civi\Api4\Contact::create(FALSE)
+      ->addValue('display_name', 'Mr Pay Flow')
+      ->execute()
+      ->first()['id'];
+    $contribution = \Civi\Api4\Contribution::create(FALSE)
+      ->addValue('contact_id', $this->contactID)
+      ->addValue('total_amount', $params['amount'])
+      ->addValue('currency', $params['currency'])
+      ->addValue('source', $params['description'])
+      ->addValue('invoice_id', $params['invoiceID'])
+      ->addValue('financial_type_id:name', 'Donation');
+    if (!empty($params['is_recur'])) {
+      $this->contributionRecurID = \Civi\Api4\ContributionRecur::create(FALSE)
+        ->addValue('contact_id', $this->contactID)
+        ->addValue('amount', $params['amount'])
+        ->addValue('currency', $params['currency'])
+        ->addValue('frequency_unit', $params['frequency_unit'])
+        ->addValue('frequency_interval', $params['frequency_interval'])
+        ->execute()
+        ->first()['id'];
+      $contribution->addValue('contribution_recur_id', $this->contributionRecurID);
+    }
+    $this->contributionID = $contribution->execute()->first()['id'];
+  }
+
   /**
    * Test making a once off payment
    */
@@ -63,21 +90,25 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     $params['amount'] = 1020.00;
     $params['currency'] = 'AUD';
     $params['description'] = 'Test Contribution';
-    $params['invoiceID'] = 'xyz';
+    $params['invoiceID'] = md5(rand());
     $params['email'] = 'unittesteway@civicrm.org';
     $params['ip_address'] = '127.0.0.1';
     foreach ($params as $key => $value) {
       // Paypal is super special and requires this. Leaving out of the more generic
       // get billing params for now to make it more obvious.
       // When/if PropertyBag supports all the params paypal needs we can convert & simplify this.
-      $params[str_replace('-5', '', str_replace('billing_', '', $key))] = $value;
+      //$params[str_replace('-5', '', str_replace('billing_', '', $key))] = $value;
     }
     $params['state_province'] = 'NSW';
     $params['country'] = 'AU';
     $params['contributionType_accounting_code'] = 4200;
     $params['installments'] = 1;
+
+    $this->createFixtures($params);
+    $params['contribution_id'] = $this->contributionID;
+    $params['contact_id'] = $this->contactID;
     $this->processor->doPayment($params);
-    $this->assertEquals($this->getExpectedSinglePaymentRequests(), $this->getRequestBodies());
+    $this->assertEquals($this->getExpectedSinglePaymentRequests($params['invoiceID']), $this->getRequestBodies());
   }
 
   /**
@@ -89,14 +120,14 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     $params['amount'] = 20.00;
     $params['currency'] = 'AUD';
     $params['description'] = 'Test Contribution';
-    $params['invoiceID'] = 'xyz';
+    $params['invoiceID'] = md5(rand());
     $params['email'] = 'unittesteway@civicrm.org';
     $params['ip_address'] = '127.0.0.1';
     foreach ($params as $key => $value) {
       // Paypal is super special and requires this. Leaving out of the more generic
       // get billing params for now to make it more obvious.
       // When/if PropertyBag supports all the params paypal needs we can convert & simplify this.
-      $params[str_replace('-5', '', str_replace('billing_', '', $key))] = $value;
+      //  $params[str_replace('-5', '', str_replace('billing_', '', $key))] = $value;
     }
     $params['state_province'] = 'NSW';
     $params['country'] = 'AU';
@@ -105,8 +136,13 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
     $params['is_recur'] = 1;
     $params['frequency_unit'] = 'month';
     $params['frequency_interval'] = 1;
+
+    $this->createFixtures($params);
+    $params['contribution_id'] = $this->contributionID;
+    $params['contact_id'] = $this->contactID;
+    $params['contribution_recur_id'] = $this->contributionRecurID;
     $this->processor->doPayment($params);
-    $this->assertEquals($this->getExpectedRecurringPaymentRequests(), $this->getRequestBodies());
+    $this->assertEquals($this->getExpectedRecurringPaymentRequests($params['invoiceID']), $this->getRequestBodies());
   }
 
   /**
@@ -150,9 +186,9 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
    */
   protected function getBillingParams(): array {
     return [
-      'billing_first_name' => 'John',
-      'billing_middle_name' => '',
-      'billing_last_name' => "O'Connor",
+      'first_name' => 'John',
+      'middle_name' => '',
+      'last_name' => "O'Connor",
       'billing_street_address-5' => '8 Hobbitton Road',
       'billing_city-5' => 'The Shire',
       'billing_state_province_id-5' => 1012,
@@ -255,15 +291,15 @@ class CRM_Core_Payment_PayflowProTest extends \PHPUnit\Framework\TestCase implem
    *
    * @return array
    */
-  public function getExpectedSinglePaymentRequests(): array {
+  public function getExpectedSinglePaymentRequests(string $invoiceID): array {
     return [
-      'USER[4]=test&VENDOR[4]=test&PARTNER[6]=PayPal&PWD[8]=test1234&TENDER[1]=C&TRXTYPE[1]=S&ACCT[16]=4111111111111111&CVV2[3]=123&EXPDATE[4]=1022&ACCTTYPE[4]=Visa&AMT[7]=1020.00&CURRENCY[3]=AUD&FIRSTNAME[4]=John&LASTNAME[8]=O\'Connor&STREET[16]=8 Hobbitton Road&CITY[9]=The+Shire&STATE[3]=NSW&ZIP[4]=5010&COUNTRY[2]=AU&EMAIL[24]=unittesteway@civicrm.org&CUSTIP[9]=127.0.0.1&COMMENT1[4]=4200&COMMENT2[4]=live&INVNUM[3]=xyz&ORDERDESC[17]=Test+Contribution&VERBOSITY[6]=MEDIUM&BILLTOCOUNTRY[2]=AU',
+      'USER[4]=test&VENDOR[4]=test&PARTNER[6]=PayPal&PWD[8]=test1234&TENDER[1]=C&TRXTYPE[1]=S&ACCT[16]=4111111111111111&CVV2[3]=123&EXPDATE[4]=1022&ACCTTYPE[4]=Visa&AMT[7]=1020.00&CURRENCY[3]=AUD&FIRSTNAME[4]=John&LASTNAME[8]=O\'Connor&STREET[16]=8 Hobbitton Road&CITY[9]=The+Shire&STATE[3]=NSW&ZIP[4]=5010&COUNTRY[2]=AU&EMAIL[24]=unittesteway@civicrm.org&CUSTIP[9]=127.0.0.1&COMMENT1[4]=4200&COMMENT2[4]=live&INVNUM[32]=' . $invoiceID . '&ORDERDESC[17]=Test+Contribution&VERBOSITY[6]=MEDIUM&BILLTOCOUNTRY[2]=AU',
     ];
   }
 
-  public function getExpectedRecurringPaymentRequests(): array {
+  public function getExpectedRecurringPaymentRequests(string $invoiceID): array {
     return [
-      'USER[4]=test&VENDOR[4]=test&PARTNER[6]=PayPal&PWD[8]=test1234&TENDER[1]=C&TRXTYPE[1]=R&ACCT[16]=4111111111111111&CVV2[3]=123&EXPDATE[4]=1022&ACCTTYPE[4]=Visa&AMT[5]=20.00&CURRENCY[3]=AUD&FIRSTNAME[4]=John&LASTNAME[8]=O\'Connor&STREET[16]=8 Hobbitton Road&CITY[9]=The+Shire&STATE[3]=NSW&ZIP[4]=5010&COUNTRY[2]=AU&EMAIL[24]=unittesteway@civicrm.org&CUSTIP[9]=127.0.0.1&COMMENT1[4]=4200&COMMENT2[4]=live&INVNUM[3]=xyz&ORDERDESC[17]=Test+Contribution&VERBOSITY[6]=MEDIUM&BILLTOCOUNTRY[2]=AU&OPTIONALTRX[1]=S&OPTIONALTRXAMT[5]=20.00&ACTION[1]=A&PROFILENAME[19]=RegularContribution&TERM[2]=12&START[8]=' . date('mdY', mktime(0, 0, 0, date("m") + 1, date("d"), date("Y"))) . '&PAYPERIOD[4]=MONT',
+      'USER[4]=test&VENDOR[4]=test&PARTNER[6]=PayPal&PWD[8]=test1234&TENDER[1]=C&TRXTYPE[1]=R&ACCT[16]=4111111111111111&CVV2[3]=123&EXPDATE[4]=1022&ACCTTYPE[4]=Visa&AMT[5]=20.00&CURRENCY[3]=AUD&FIRSTNAME[4]=John&LASTNAME[8]=O\'Connor&STREET[16]=8 Hobbitton Road&CITY[9]=The+Shire&STATE[3]=NSW&ZIP[4]=5010&COUNTRY[2]=AU&EMAIL[24]=unittesteway@civicrm.org&CUSTIP[9]=127.0.0.1&COMMENT1[4]=4200&COMMENT2[4]=live&INVNUM[32]=' . $invoiceID . '&ORDERDESC[17]=Test+Contribution&VERBOSITY[6]=MEDIUM&BILLTOCOUNTRY[2]=AU&OPTIONALTRX[1]=S&OPTIONALTRXAMT[5]=20.00&ACTION[1]=A&PROFILENAME[19]=RegularContribution&TERM[2]=12&START[8]=' . date('mdY', mktime(0, 0, 0, date("m") + 1, date("d"), date("Y"))) . '&PAYPERIOD[4]=MONT',
     ];
   }
 
