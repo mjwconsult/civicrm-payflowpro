@@ -301,7 +301,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
             ->addValue('processor_id', $nvpArray['PROFILEID'])
             ->execute();
         }
-        $result = $this->setStatusPaymentCompleted($result);
+        $result = $this->setStatusPaymentCompleted([]);
         //'trxn_id' is varchar(255) field. returned value is length 12
         $result['trxn_id'] = ($nvpArray['PNREF'] ?? '') . ($nvpArray['TRXPNREF'] ?? '');
         return $result;
@@ -510,7 +510,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         throw new PaymentProcessorException('Amount is the same as before!');
       }
 
-      // Call the API to cancel the subscription
+      // Call the API to update the subscription amount
       $payflowApi = new \Civi\PayflowPro\Api($this);
       $payflow_query_array = $payflowApi->getQueryArrayAuth();
       $payflow_query_array['TRXTYPE'] = 'R';
@@ -555,8 +555,52 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
   public function updateSubscriptionBillingInfo(&$message = '', $params = []) {
-    $message = 'updateSubscriptionBillingInfo not yet implemented';
-    return FALSE;
+    $propertyBag = $this->beginUpdateSubscriptionBillingInfo($params);
+
+    try {
+      // Call the API to update the subscription amount
+      $payflowApi = new \Civi\PayflowPro\Api($this);
+      $payflow_query_array = $payflowApi->getQueryArrayAuth();
+      $payflow_query_array['TRXTYPE'] = 'R';
+      $payflow_query_array['TENDER'] = 'C';
+      $payflow_query_array['ACTION'] = 'M';
+      $payflow_query_array['ORIGPROFILEID'] = $propertyBag->getRecurProcessorID();
+      $payflow_query_array['ACCT'] = $propertyBag->getCustomProperty('credit_card_number'); // credit card number
+      $payflow_query_array['CVV2'] = $propertyBag->getCustomProperty('cvv2'); // CVV
+      $expDate = $propertyBag->getCustomProperty('credit_card_exp_date');
+      $expDateFormatted = date('my', strtotime($expDate['Y'] . $expDate['M'] . '01000000'));
+      $payflow_query_array['EXPDATE'] = $expDateFormatted; // Expiry card
+      $payflow_query_array['BILLTOFIRSTNAME'] = $propertyBag->getFirstName();
+      $payflow_query_array['BILLTOLASTNAME'] = $propertyBag->getLastName();
+      $payflow_query_array['BILLTOSTREET'] = $propertyBag->getBillingStreetAddress();
+      $payflow_query_array['BILLTOCITY'] = $propertyBag->getBillingCity();
+      $payflow_query_array['BILLTOSTATE'] = $propertyBag->getBillingStateProvince();
+      $payflow_query_array['BILLTOZIP'] = $propertyBag->getBillingPostalCode();
+      $payflow_query_array['BILLTOCOUNTRY'] = $propertyBag->getBillingCountry();
+
+      $payflow_query = $payflowApi->convert_to_nvp($payflow_query_array);
+
+      $responseData = $payflowApi->submit_transaction($payflow_query);
+
+      $nvpArray = $payflowApi->processResponseData($responseData);
+
+      switch ($nvpArray['RESULT']) {
+        case 0:
+          // Success
+          \Civi::log('payflowpro')->info('Update billing details success: ' . print_r($nvpArray, TRUE));
+          break;
+
+        default:
+          throw new PaymentProcessorException('Update billing details failed: ' . print_r($nvpArray, TRUE));
+      }
+    }
+    catch (Exception $e) {
+      // On ANY failure, throw an exception which will be reported back to the user.
+      $this->api->logError('Update billing details failed for RecurID: ' . $propertyBag->getContributionRecurID() . ' Error: ' . $e->getMessage());
+      throw new PaymentProcessorException('Update billing details failed: ' . $e->getMessage(), $e->getCode(), $params);
+    }
+
+    return TRUE;
   }
 
   /**
