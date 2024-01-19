@@ -86,7 +86,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
    * This function collects all the information from a web/api form and invokes
    * the relevant payment processor specific functions to perform the transaction
    *
-   * @param array|\Civi\Payment\PropertyBag $params
+   * @param array|\Civi\Payment\PropertyBag $paymentParams
    *
    * @param string $component
    *
@@ -95,17 +95,13 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
    *
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
-  public function doPayment(&$params, $component = 'contribute') {
-    $propertyBag = PropertyBag::cast($params);
-    $this->_component = $component;
-    $result = $this->setStatusPaymentPending([]);
+  public function doPayment(&$paymentParams, $component = 'contribute') {
+    /* @var \Civi\Payment\PropertyBag $propertyBag */
+    $propertyBag = $this->beginDoPayment($paymentParams);
 
-    // If we have a $0 amount, skip call to processor and set payment_status to Completed.
-    // Conceivably a processor might override this - perhaps for setting up a token - but we don't
-    // have an example of that at the moment.
-    if ($propertyBag->getAmount() == 0) {
-      $result = $this->setStatusPaymentCompleted($result);
-      return $result;
+    $zeroAmountPayment = $this->processZeroAmountPayment($propertyBag);
+    if ($zeroAmountPayment) {
+      return $zeroAmountPayment;
     }
 
     /*
@@ -120,10 +116,10 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'TENDER' => 'C',
         // A - Authorization, S - Sale
         'TRXTYPE' => 'S',
-        'ACCT' => urlencode($params['credit_card_number']),
-        'CVV2' => $params['cvv2'],
-        'EXPDATE' => urlencode(sprintf('%02d', (int) $params['month']) . substr($params['year'], 2, 2)),
-        'ACCTTYPE' => urlencode($params['credit_card_type']),
+        'ACCT' => urlencode($paymentParams['credit_card_number']),
+        'CVV2' => $paymentParams['cvv2'],
+        'EXPDATE' => urlencode(sprintf('%02d', (int) $paymentParams['month']) . substr($paymentParams['year'], 2, 2)),
+        'ACCTTYPE' => urlencode($paymentParams['credit_card_type']),
         // @todo: Do we need to machinemoney format? ie. 1024.00 or is 1024 ok for API?
         'AMT' => \Civi::format()->machineMoney($propertyBag->getAmount()),
         'CURRENCY' => urlencode($propertyBag->getCurrency()),
@@ -137,8 +133,8 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'ZIP' => urlencode($propertyBag->getBillingPostalCode()),
         'COUNTRY' => urlencode($propertyBag->getBillingCountry()),
         'EMAIL' => $propertyBag->getEmail(),
-        'CUSTIP' => urlencode($params['ip_address']),
-        'COMMENT1' => urlencode($params['contributionType_accounting_code']),
+        'CUSTIP' => urlencode($paymentParams['ip_address']),
+        'COMMENT1' => urlencode($paymentParams['contributionType_accounting_code']),
         'COMMENT2' => $this->_paymentProcessor['is_test'] ? 'test' : 'live',
         'INVNUM' => urlencode($propertyBag->getInvoiceID()),
         'ORDERDESC' => urlencode($propertyBag->getDescription()),
@@ -146,11 +142,11 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'BILLTOCOUNTRY' => urlencode($propertyBag->getBillingCountry()),
       ]);
 
-    if ($params['installments'] == 1) {
-      $params['is_recur'] = FALSE;
+    if ($paymentParams['installments'] == 1) {
+      $paymentParams['is_recur'] = FALSE;
     }
 
-    if ($params['is_recur'] == TRUE) {
+    if ($paymentParams['is_recur'] == TRUE) {
 
       $payflow_query_array['TRXTYPE'] = 'R';
       $payflow_query_array['OPTIONALTRX'] = 'S';
@@ -161,7 +157,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       //A for add recurring (M-modify,C-cancel,R-reactivate,I-inquiry,P-payment
       $payflow_query_array['PROFILENAME'] = urlencode('RegularContribution');
       //A for add recurring (M-modify,C-cancel,R-reactivate,I-inquiry,P-payment
-      if ($params['installments'] > 0) {
+      if ($paymentParams['installments'] > 0) {
         $payflow_query_array['TERM'] = $propertyBag->getRecurInstallments() - 1;
         //ie. in addition to the one happening with this transaction
       }
@@ -180,78 +176,81 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       //attempts occur until the term is complete.
       // $payflow_query_array['RETRYNUMDAYS'] = (not set as can't assume business rule
 
+      if ($propertyBag->getRecurFrequencyUnit() === 'day') {
+        throw new PaymentProcessorException('Current implementation does not support recurring with frequency "day"');
+      }
       $interval = $propertyBag->getRecurFrequencyInterval() . " " . $propertyBag->getRecurFrequencyUnit();
       switch ($interval) {
         case '1 week':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 7,
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 7,
             date("Y")
           );
-          $params['end_date'] = mktime(0, 0, 0, date("m"), date("d") + (7 * $payflow_query_array['TERM']),
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m"), date("d") + (7 * $payflow_query_array['TERM']),
             date("Y")
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "WEEK";
           $propertyBag->setRecurFrequencyUnit('week');
           $propertyBag->setRecurFrequencyInterval(1);
           break;
 
         case '2 weeks':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 14, date("Y"));
-          $params['end_date'] = mktime(0, 0, 0, date("m"), date("d") + (14 * $payflow_query_array['TERM']), date("Y ")
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 14, date("Y"));
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m"), date("d") + (14 * $payflow_query_array['TERM']), date("Y ")
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "BIWK";
           $propertyBag->setRecurFrequencyUnit('week');
           $propertyBag->setRecurFrequencyInterval(2);
           break;
 
         case '4 weeks':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 28, date("Y")
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d") + 28, date("Y")
           );
-          $params['end_date'] = mktime(0, 0, 0, date("m"), date("d") + (28 * $payflow_query_array['TERM']), date("Y")
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m"), date("d") + (28 * $payflow_query_array['TERM']), date("Y")
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "FRWK";
           $propertyBag->setRecurFrequencyUnit('week');
           $propertyBag->setRecurFrequencyInterval(4);
           break;
 
         case '1 month':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m") + 1,
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m") + 1,
             date("d"), date("Y")
           );
-          $params['end_date'] = mktime(0, 0, 0, date("m") +
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m") +
             (1 * $payflow_query_array['TERM']),
             date("d"), date("Y")
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "MONT";
           $propertyBag->setRecurFrequencyUnit('month');
           $propertyBag->setRecurFrequencyInterval(1);
           break;
 
         case '3 months':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m") + 3, date("d"), date("Y")
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m") + 3, date("d"), date("Y")
           );
-          $params['end_date'] = mktime(0, 0, 0, date("m") +
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m") +
             (3 * $payflow_query_array['TERM']),
             date("d"), date("Y")
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "QTER";
           $propertyBag->setRecurFrequencyUnit('month');
           $propertyBag->setRecurFrequencyInterval(3);
           break;
 
         case '6 months':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m") + 6, date("d"),
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m") + 6, date("d"),
             date("Y")
           );
-          $params['end_date'] = mktime(0, 0, 0, date("m") +
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m") +
             (6 * $payflow_query_array['TERM']),
             date("d"), date("Y")
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']
           );
           $payflow_query_array['PAYPERIOD'] = "SMYR";
           $propertyBag->setRecurFrequencyUnit('month');
@@ -259,14 +258,14 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
           break;
 
         case '1 year':
-          $params['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d"),
+          $paymentParams['next_sched_contribution_date'] = mktime(0, 0, 0, date("m"), date("d"),
             date("Y") + 1
           );
-          $params['end_date'] = mktime(0, 0, 0, date("m"), date("d"),
+          $paymentParams['end_date'] = mktime(0, 0, 0, date("m"), date("d"),
             date("Y") +
             (1 * $payflow_query_array['TEM'])
           );
-          $payflow_query_array['START'] = date('mdY', $params['next_sched_contribution_date']);
+          $payflow_query_array['START'] = date('mdY', $paymentParams['next_sched_contribution_date']);
           $payflow_query_array['PAYPERIOD'] = "YEAR";
           $propertyBag->setRecurFrequencyUnit('year');
           $propertyBag->setRecurFrequencyInterval(1);
@@ -294,7 +293,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
     switch ($nvpArray['RESULT']) {
       case 0:
         // Success
-        if ($params['is_recur'] == TRUE) {
+        if ($paymentParams['is_recur'] == TRUE) {
           // Store the PROFILEID on the recur
           \Civi\Api4\ContributionRecur::update(FALSE)
             ->addWhere('id', '=', $propertyBag->getContributionRecurID())
