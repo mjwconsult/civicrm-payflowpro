@@ -11,6 +11,7 @@
 
 use Civi\Payment\Exception\PaymentProcessorException;
 use Civi\Payment\PropertyBag;
+use Brick\Money\Money;
 use CRM_Payflowpro_ExtensionUtil as E;
 
 /**
@@ -350,44 +351,35 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
 
     $propertyBag = PropertyBag::cast($params);
 
-    // @todo Build parameters for Payflow Refund API
-    // @todo: Do we need to machinemoney format? ie. 1024.00 or is 1024 ok for API?
-    $refundParams['amount'] = \Civi::format()->machineMoney($propertyBag->getAmount());
-    $refundParams['trxn_id'] = $params['trxn_id'];
+    // Call the API to refund
+    $payflowApi = new \Civi\PayflowPro\Api($this);
+    $payflow_query_array = $payflowApi->getQueryArrayAuth();
+    $payflow_query_array['TRXTYPE'] = 'C';
+    $payflow_query_array['TENDER'] = 'C';
+    $payflow_query_array['ORIGID'] = $params['trxn_id'];
+    $payflow_query_array['AMT'] = \Civi::format()->machineMoney($propertyBag->getAmount());
 
-    try {
-      // @todo call the payflow refund API
-      $refundResult['status'] = 'x';
-      $refundResult['id'] = 'y';
-    }
-    catch (Exception $e) {
-      throw new PaymentProcessorException($e->getMessage());
-    }
+    $payflow_query = $payflowApi->convert_to_nvp($payflow_query_array);
 
-    switch ($refundResult['status']) {
-      case 'pending':
-        $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Pending');
-        $refundStatusName = 'Pending';
-        break;
+    $responseData = $payflowApi->submit_transaction($payflow_query);
 
-      case 'succeeded':
+    $nvpArray = $payflowApi->processResponseData($responseData);
+
+    switch ($nvpArray['RESULT']) {
+      case 0:
+        // Success
         $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
         $refundStatusName = 'Completed';
         break;
 
-      case 'failed':
+      default:
         $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Failed');
         $refundStatusName = 'Failed';
-        break;
-
-      case 'canceled':
-        $refundStatus = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Cancelled');
-        $refundStatusName = 'Cancelled';
-        break;
+        \Civi::log('payflowpro')->error('Refund failed: ' . $nvpArray['RESPMSG'] . print_r($nvpArray,TRUE));
     }
 
     $refundParams = [
-      'refund_trxn_id' => $refundResult['id'],
+      'refund_trxn_id' => $nvpArray['PNREF'],
       'refund_status_id' => $refundStatus,
       'refund_status' => $refundStatusName,
       'fee_amount' => 0,
@@ -504,17 +496,44 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
    */
   public function changeSubscriptionAmount(&$message = '', $params = []) {
     // We only support the following params: amount
+    $propertyBag = $this->beginChangeSubscriptionAmount($params);
     try {
-      $propertyBag = $this->beginChangeSubscriptionAmount($params);
-
       // Get the PayflowPro subscription
+      $existingRecur = \Civi\Api4\ContributionRecur::get(FALSE)
+        ->addWhere('id', '=', $propertyBag->getContributionRecurID())
+        ->execute()
+        ->first();
 
       // Check if amount has actually changed!
-      /*        if (Money::of($calculatedItem['amount'], mb_strtoupper($calculatedItem['currency']))
-                ->isAmountAndCurrencyEqualTo(Money::of($propertyBag->getAmount(), $propertyBag->getCurrency()))) {
-                throw new PaymentProcessorException('Amount is the same as before!');
-              }
-              */
+      if (Money::of($existingRecur['amount'], mb_strtoupper($existingRecur['currency']))
+        ->isAmountAndCurrencyEqualTo(Money::of($propertyBag->getAmount(), $propertyBag->getCurrency()))) {
+        throw new PaymentProcessorException('Amount is the same as before!');
+      }
+
+      // Call the API to cancel the subscription
+      $payflowApi = new \Civi\PayflowPro\Api($this);
+      $payflow_query_array = $payflowApi->getQueryArrayAuth();
+      $payflow_query_array['TRXTYPE'] = 'R';
+      $payflow_query_array['TENDER'] = 'C';
+      $payflow_query_array['ACTION'] = 'M';
+      $payflow_query_array['ORIGPROFILEID'] = $propertyBag->getRecurProcessorID();
+      $payflow_query_array['AMT'] = \Civi::format()->machineMoney($propertyBag->getAmount());
+
+      $payflow_query = $payflowApi->convert_to_nvp($payflow_query_array);
+
+      $responseData = $payflowApi->submit_transaction($payflow_query);
+
+      $nvpArray = $payflowApi->processResponseData($responseData);
+
+      switch ($nvpArray['RESULT']) {
+        case 0:
+          // Success
+          \Civi::log('payflowpro')->info('Update subscription success: ' . print_r($nvpArray, TRUE));
+          break;
+
+        default:
+          throw new PaymentProcessorException('Update Subscription Failed: ' . print_r($nvpArray, TRUE));
+      }
     }
     catch (Exception $e) {
       // On ANY failure, throw an exception which will be reported back to the user.
