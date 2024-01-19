@@ -545,6 +545,21 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
   }
 
   /**
+   * Update payment details at Authorize.net.
+   *
+   * @param string $message
+   * @param array $params
+   *
+   * @return bool|object
+   *
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
+   */
+  public function updateSubscriptionBillingInfo(&$message = '', $params = []) {
+    $message = 'updateSubscriptionBillingInfo not yet implemented';
+    return FALSE;
+  }
+
+  /**
    * Get an array of the fields that can be edited on the recurring contribution.
    *
    * Some payment processors support editing the amount and other scheduling details of recurring payments, especially
