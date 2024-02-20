@@ -12,14 +12,25 @@ class Api {
    */
   protected \CRM_Core_Payment_PayflowPro $paymentProcessor;
 
+  /**
+   * @param \CRM_Core_Payment_PayflowPro $paymentProcessor
+   */
   public function __construct(\CRM_Core_Payment_PayflowPro $paymentProcessor) {
     $this->paymentProcessor = $paymentProcessor;
   }
 
+  /**
+   * Get the PaymentProcessor object
+   */
   private function getPaymentProcessor(): \CRM_Core_Payment_PayflowPro {
     return $this->paymentProcessor;
   }
 
+  /**
+   * Get the array of PaymentProcessor configuration
+   *
+   * @return array
+   */
   private function getPaymentProcessorArray(): array {
     return $this->paymentProcessor->getPaymentProcessor();
   }
@@ -39,7 +50,12 @@ class Api {
     }
   }
 
-  public function getQueryArrayAuth() {
+  /**
+   * Convert the CiviCRM PaymentProcessor auth params into keys for PayflowPro authentication
+   *
+   * @return array
+   */
+  public function getQueryArrayAuth(): array {
     return [
       'USER' => $this->getUser(),
       'VENDOR' => $this->getPaymentProcessorArray()['user_name'],
@@ -72,7 +88,7 @@ class Api {
    * @return mixed|object
    * @throws \Civi\Payment\Exception\PaymentProcessorException
    */
-  public function submit_transaction($payflow_query) {
+  public function submit_transaction(string $payflow_query) {
     $submiturl = $this->getPaymentProcessorArray()['url_site'];
     // get data ready for API
     $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Guzzle';
@@ -161,6 +177,8 @@ class Api {
   }
 
   /**
+   * Process the response received from PayflowPro API
+   *
    * @param string $responseData
    *
    * @return mixed
@@ -191,65 +209,46 @@ class Api {
     }
 
     return $nvpArray;
-
-    switch ($result_code) {
-      case 0:
-
-        /*******************************************************
-         * Success !
-         * This is a successful transaction. Payflow Pro does return further information
-         * about transactions to help you identify fraud including whether they pass
-         * the cvv check, the avs check. This is stored in
-         * CiviCRM as part of the transact
-         * but not further processing is done. Business rules would need to be defined
-         *******************************************************/
-        $result['trxn_id'] = ($nvpArray['PNREF'] ?? '') . ($nvpArray['TRXPNREF'] ?? '');
-        //'trxn_id' is varchar(255) field. returned value is length 12
-        $params['trxn_result_code'] = $nvpArray['AUTHCODE'] . "-Cvv2:" . $nvpArray['CVV2MATCH'] . "-avs:" . $nvpArray['AVSADDR'];
-
-        if ($params['is_recur'] == TRUE) {
-          $params['recur_trxn_id'] = $nvpArray['PROFILEID'];
-          //'trxn_id' is varchar(255) field. returned value is length 12
-        }
-        $result = $this->setStatusPaymentCompleted($result);
-        return $result;
-
-      case 1:
-        throw new PaymentProcessorException('There is a payment processor configuration problem. This is usually due to invalid account information or ip restrictions on the account.  You can verify ip restriction by logging         // into Manager.  See Service Settings >> Allowed IP Addresses.   ', 9003);
-
-      case 12:
-        // Hard decline from bank.
-        throw new PaymentProcessorException('Your transaction was declined   ', 9009);
-
-      case 13:
-        // Voice authorization required.
-        throw new PaymentProcessorException('Your Transaction is pending. Contact Customer Service to complete your order.', 9010);
-
-      case 23:
-        // Issue with credit card number or expiration date.
-        throw new PaymentProcessorException('Invalid credit card information. Please re-enter.', 9011);
-
-      case 26:
-        throw new PaymentProcessorException('You have not configured your payment processor with the correct credentials. Make sure you have provided both the "vendor" and the "user" variables ', 9012);
-
-      default:
-        throw new PaymentProcessorException('Error - from payment processor: [' . $result_code . " " . $nvpArray['RESPMSG'] . "] ", 9013);
-    }
-
   }
 
+  /**
+   * Log an info message with payment processor prefix
+   * @param string $message
+   *
+   * @return void
+   */
   public function logInfo(string $message) {
     $this->log('info', $message);
   }
 
+  /**
+   * Log an error message with payment processor prefix
+   *
+   * @param string $message
+   *
+   * @return void
+   */
   public function logError(string $message) {
     $this->log('error', $message);
   }
 
+  /**
+   * Log a debug message with payment processor prefix
+   *
+   * @param string $message
+   *
+   * @return void
+   */
   public function logDebug(string $message) {
     $this->log('debug', $message);
   }
 
+  /**
+   * @param string $level
+   * @param string $message
+   *
+   * @return void
+   */
   private function log(string $level, string $message) {
     $channel = 'payflowpro';
     $prefix = $channel . '(' . $this->getPaymentProcessor()->getID() . '): ';
