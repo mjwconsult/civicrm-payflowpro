@@ -13,9 +13,9 @@ return [
       'values' => [
         'name' => 'PayflowPro',
         'title' => E::ts('PayflowPro'),
-        'user_name_label' => 'Vendor ID',
+        'user_name_label' => 'Merchant login ID',
         'password_label' => 'Password',
-        'signature_label' => 'Partner (merchant)',
+        'signature_label' => 'Partner (Eg. PayPal)',
         'subject_label' => 'User',
         'class_name' => 'Payment_PayflowPro',
         'url_site_default' => 'https://payflowpro.paypal.com',

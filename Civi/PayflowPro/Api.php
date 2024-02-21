@@ -85,10 +85,11 @@ class Api {
    *
    * @param string $payflow_query value string to be posted
    *
-   * @return mixed|object
+   * @return string
    * @throws \Civi\Payment\Exception\PaymentProcessorException
+   * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  public function submit_transaction(string $payflow_query) {
+  public function submit_transaction(string $payflow_query): string {
     $submiturl = $this->getPaymentProcessorArray()['url_site'];
     // get data ready for API
     $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Guzzle';
@@ -158,7 +159,8 @@ class Api {
       throw new PaymentProcessorException('Error connecting to the Payflow Pro API server.', 9015);
     }
 
-    if (($responseData === FALSE) || (strlen($responseData) == 0)) {
+    $responseDataString = $responseData->getContents();
+    if (($responseDataString === FALSE) || (strlen($responseDataString) === 0)) {
       throw new PaymentProcessorException("Error: Connection to payment gateway failed - no data
                                            returned. Gateway url set to $submiturl", 9006);
     }
@@ -166,14 +168,14 @@ class Api {
     /*
      * If gateway returned no data - tell 'em and bail out
      */
-    if (empty($responseData)) {
+    if (empty($responseDataString)) {
       throw new PaymentProcessorException('Error: No data returned from payment gateway.', 9007);
     }
 
     /*
      * Success so far - close the curl and check the data
      */
-    return $responseData;
+    return $responseDataString;
   }
 
   /**
@@ -205,7 +207,7 @@ class Api {
     // get the result code to validate.
     $result_code = $nvpArray['RESULT'];
     if ($result_code > 0) {
-      \Civi::log('payflowpro')->error('payflopro: ' . $nvpArray['RESPMSG']);
+      $this->logError($nvpArray['RESPMSG']);
     }
 
     return $nvpArray;
@@ -253,6 +255,95 @@ class Api {
     $channel = 'payflowpro';
     $prefix = $channel . '(' . $this->getPaymentProcessor()->getID() . '): ';
     \Civi::log($channel)->$level($prefix . $message);
+  }
+
+  public function getRecurPaymentHistory(string $recurProfileID, string $paymentHistoryType = 'Y') {
+    // Call the API to refund.
+    $payflowApi = $this;
+    $payflow_query_array = $payflowApi->getQueryArrayAuth();
+    $payflow_query_array['TRXTYPE'] = 'R';
+    $payflow_query_array['ORIGPROFILEID'] = $recurProfileID;
+    $payflow_query_array['PAYMENTHISTORY'] = $paymentHistoryType;
+
+    $payflow_query = $payflowApi->convert_to_nvp($payflow_query_array);
+
+    $responseData = $payflowApi->submit_transaction($payflow_query);
+
+    $nvpArray = $payflowApi->processResponseData($responseData);
+
+    // get the result code to validate.
+    $result_code = $nvpArray['RESULT'];
+    if ($result_code > 0) {
+      throw new PaymentProcessorException($nvpArray['RESPMSG']);
+    }
+
+    /**
+     * Will return something in this format. We'll parse it now
+    RESULT=0&RPREF=RKM500141021&PROFILEID=RT0000000100&P_PNREF1=VWYA06156256&P_
+    TRANSTIME1=21-May-04 04:47
+    PM&P_RESULT1=0&P_TENDER1=C&P_AMT1=1.00&P_TRANSTATE1=8&P_PNREF2=VWYA06156269
+    &P_TRANSTIME2=27-May-04 01:19
+     */
+
+    $keyMap = [
+      'P_PNREF' => [
+        'key' => 'trxn_id',
+        'type' => 'String',
+      ],
+      'P_TRANSTIME' => [
+        'key' => 'trxn_date',
+        'type' => 'Timestamp',
+      ],
+      'P_TRANSTATE' => [
+        'key' => 'status_id',
+        'type' => 'Int',
+      ],
+      'P_TENDER' => [
+        'key' => 'payment_method',
+        'type' => 'String',
+      ],
+      'P_AMT' => [
+        'key' => 'amount',
+        'type' => 'Float',
+      ],
+    ];
+
+    // Result is 0 (ok) since we got here
+    foreach ($nvpArray as $key => $value) {
+      // It's a "payment" parameter
+      // We're only going to look for the following parameters:
+      // - PNREF: Payment reference: trxn_id eg. VWYA06156256
+      // - TRANSTIME: Transaction time. Eg. 21-May-04 04:47
+      // - TRANSTATE: Transaction status: one of:
+      //    - 1: error
+      //    - 6: settlement pending
+      //    - 7: settlement in progress
+      //    - 8: settlement completed/successfully
+      //    - 11: settlement failed
+      //    - 14: settlement incomplete
+      // - TENDER: C = Credit card; P = PayPal; A = Automated Clearinghouse
+      // - AMT: Amount (eg. 1.00)
+      foreach ($keyMap as $srcKey => $dest) {
+        if (str_contains($key, $srcKey)) {
+          $paymentID = substr($key, strlen($srcKey));
+          switch ($dest['type']) {
+            case 'Timestamp':
+              $transformedValue = strtotime($value);
+              break;
+
+            default:
+              $transformedValue = $value;
+          }
+          $paymentsByID[$paymentID][$dest['key']] = $transformedValue;
+        }
+      }
+    }
+    foreach ($paymentsByID as $id => $detail) {
+      $paymentsByDate[$paymentsByID[$id]['trxn_date']] = $detail;
+      $paymentsByDate[$paymentsByID[$id]['trxn_date']]['id'] = $id;
+    }
+
+    return $paymentsByDate ?? [];
   }
 
 }
