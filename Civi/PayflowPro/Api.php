@@ -261,6 +261,7 @@ class Api {
     // Call the API to refund.
     $payflowApi = $this;
     $payflow_query_array = $payflowApi->getQueryArrayAuth();
+    $payflow_query_array['ACTION'] = 'I';
     $payflow_query_array['TRXTYPE'] = 'R';
     $payflow_query_array['ORIGPROFILEID'] = $recurProfileID;
     $payflow_query_array['PAYMENTHISTORY'] = $paymentHistoryType;
