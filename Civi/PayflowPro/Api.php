@@ -296,8 +296,8 @@ class Api {
         'type' => 'Timestamp',
       ],
       'P_TRANSTATE' => [
-        'key' => 'status_id',
-        'type' => 'Int',
+        'key' => 'status_id:name',
+        'type' => 'Status',
       ],
       'P_TENDER' => [
         'key' => 'payment_method',
@@ -329,13 +329,25 @@ class Api {
           $paymentID = substr($key, strlen($srcKey));
           switch ($dest['type']) {
             case 'Timestamp':
-              $transformedValue = strtotime($value);
+              $paymentsByID[$paymentID][$dest['key']] = strtotime($value);
+              break;
+
+            case 'Status':
+              $mapToCivi = [
+                1 => 'Failed', // error
+                6 => 'Pending', // settlement pending
+                7 => 'Pending', // settlement in progress
+                8 => 'Completed', // settlement completed/successfully
+                11 => 'Failed', // settlement failed
+                14 => 'Failed', // settlement incomplete
+              ];
+              $paymentsByID[$paymentID][$srcKey] = $value;
+              $paymentsByID[$paymentID][$dest['key']] = $mapToCivi[$value];
               break;
 
             default:
-              $transformedValue = $value;
+              $paymentsByID[$paymentID][$dest['key']] = $value;
           }
-          $paymentsByID[$paymentID][$dest['key']] = $transformedValue;
         }
       }
     }

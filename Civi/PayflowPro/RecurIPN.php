@@ -2,6 +2,7 @@
 
 namespace Civi\PayflowPro;
 
+use Civi\Api4\Contribution;
 use Civi\Api4\ContributionRecur;
 use Civi\Payment\System;
 
@@ -53,7 +54,8 @@ class RecurIPN {
       // This gets a list of payments sorted by date
       $recurPaymentHistory = $payflowAPI->getRecurPaymentHistory($contributionRecur['processor_id'], $this->paymentHistoryType);
       // Get all the existing contributions for this recur ordered by most recent first
-      $contributions = \Civi\Api4\Contribution::get(FALSE)
+      $contributions = Contribution::get(FALSE)
+        ->addSelect('*', 'contribution_status_id:name')
         ->addWhere('contribution_recur_id', '=', $contributionRecur['id'])
         ->addWhere('is_test', '=', $this->getPaymentProcessor()->getIsTestMode())
         ->addOrderBy('receive_date', 'DESC')
@@ -65,12 +67,12 @@ class RecurIPN {
       //   compare with what we have recorded in CiviCRM.
       foreach ($recurPaymentHistory as $payflowRecurPayment) {
         $matchedContribution = FALSE;
-        $contributionTrxnIDs = array_keys($contributions);
-        foreach ($contributionTrxnIDs as $contributionTrxnID) {
+        foreach ($contributions as $contribution) {
           // Check for existing contribution matching recurPayment by trxn_id
-          if (str_contains($contributionTrxnID, $payflowRecurPayment['trxn_id'])) {
+          if (str_contains($contribution['trxn_id'], $payflowRecurPayment['trxn_id'])) {
             // We've got a matching contribution for the payflow recur payment (ie. it's already recorded)
             // @todo Check status as we may not be Completed / Successful
+            $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['existing'] = TRUE;
             $matchedContribution = TRUE;
             break;
           }
@@ -87,18 +89,43 @@ class RecurIPN {
             'fee_amount' => 0,
           ];
           $newContributionID = $this->repeatContribution($repeatContributionParams);
-          $results['recur'][$contributionRecur['id']]['contributions_created'][] = $newContributionID;
+          $results['recur'][$contributionRecur['id']]['contributions'][$newContributionID]['created'] = TRUE;
+          $contribution = \Civi\Api4\Contribution::get(FALSE)
+            ->addWhere('id', '=', $newContributionID)
+            ->execute()
+            ->first();
+        }
 
-          // Now record the payment
-          $contributionParams = [
-            'contribution_id' => $newContributionID,
-            'trxn_date' => date('YmdHis', $payflowRecurPayment['trxn_date']),
-            'order_reference' => $payflowRecurPayment['trxn_id'],
-            'trxn_id' => $payflowRecurPayment['trxn_id'],
-            'total_amount' => $payflowRecurPayment['amount'],
-            'fee_amount' => 0,
-          ];
-          $this->updateContributionCompleted($contributionParams);
+        // Now we have a contribution (either matched or created)
+        // Check status and record appropriately
+        switch($payflowRecurPayment['status_id:name']) {
+          case 'Completed':
+            if ($contribution['contribution_status_id:name'] === 'Completed') {
+              $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['already_completed'] = TRUE;
+            }
+            else {
+              // Now record the payment
+              $contributionParams = [
+                'contribution_id' => $newContributionID,
+                'trxn_date' => date('YmdHis', $payflowRecurPayment['trxn_date']),
+                'order_reference' => $payflowRecurPayment['trxn_id'],
+                'trxn_id' => $payflowRecurPayment['trxn_id'],
+                'total_amount' => $payflowRecurPayment['amount'],
+                'fee_amount' => 0,
+              ];
+              $this->updateContributionCompleted($contributionParams);
+              $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['completed'] = TRUE;
+            }
+          break;
+
+          case 'Failed':
+            $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['failed'] = TRUE;
+            // @todo: Implement recording failed
+            break;
+
+          case 'Pending':
+            $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['completed'] = TRUE;
+            break;
         }
       }
     }
