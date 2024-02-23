@@ -334,15 +334,34 @@ class Api {
 
             case 'Status':
               $mapToCivi = [
-                1 => 'Failed', // error
-                6 => 'Pending', // settlement pending
-                7 => 'Pending', // settlement in progress
-                8 => 'Completed', // settlement completed/successfully
-                11 => 'Failed', // settlement failed
-                14 => 'Failed', // settlement incomplete
+                1 => [
+                  'name' => 'Failed',
+                  'description' => 'error',
+                ],
+                6 => [
+                  'name' => 'Pending',
+                  'description' => 'settlement pending',
+                ],
+                7 => [
+                  'name' => 'Pending',
+                  'description' => 'settlement in progress',
+                ],
+                8 => [
+                  'name' => 'Completed',
+                  'description' => 'settlement completed/successfully',
+                ],
+                11 => [
+                  'name' => 'Failed',
+                  'description' => 'settlement failed',
+                ],
+                14 => [
+                  'name' => 'Failed',
+                  'description' => 'settlement incomplete',
+                ],
               ];
               $paymentsByID[$paymentID][$srcKey] = $value;
-              $paymentsByID[$paymentID][$dest['key']] = $mapToCivi[$value];
+              $paymentsByID[$paymentID][$dest['key'] . '_description'] = $mapToCivi[$value]['description'];
+              $paymentsByID[$paymentID][$dest['key']] = $mapToCivi[$value]['name'];
               break;
 
             default:

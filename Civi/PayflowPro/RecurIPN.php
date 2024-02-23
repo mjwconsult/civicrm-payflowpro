@@ -105,7 +105,7 @@ class RecurIPN {
             }
             else {
               // Now record the payment
-              $contributionParams = [
+              $completedContributionParams = [
                 'contribution_id' => $newContributionID,
                 'trxn_date' => date('YmdHis', $payflowRecurPayment['trxn_date']),
                 'order_reference' => $payflowRecurPayment['trxn_id'],
@@ -113,18 +113,24 @@ class RecurIPN {
                 'total_amount' => $payflowRecurPayment['amount'],
                 'fee_amount' => 0,
               ];
-              $this->updateContributionCompleted($contributionParams);
+              $this->updateContributionCompleted($completedContributionParams);
               $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['completed'] = TRUE;
             }
           break;
 
           case 'Failed':
+            $failedContributionParams = [
+              'contribution_id' => $contribution['id'],
+              'order_reference' => $payflowRecurPayment['trxn_id'],
+              'cancel_date' => date('YmdHis', $payflowRecurPayment['trxn_date']),
+              'cancel_reason'   => $payflowRecurPayment['status_id:name_description'],
+            ];
+            $this->updateContributionFailed($failedContributionParams);
             $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['failed'] = TRUE;
-            // @todo: Implement recording failed
             break;
 
           case 'Pending':
-            $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['completed'] = TRUE;
+            $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['pending'] = TRUE;
             break;
         }
       }
