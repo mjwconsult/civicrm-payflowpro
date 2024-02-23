@@ -133,6 +133,8 @@ class RecurIPN {
             $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['pending'] = TRUE;
             break;
         }
+        $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['description'] = $payflowRecurPayment['status_id:name_description'];
+        $results['recur'][$contributionRecur['id']]['contributions'][$contribution['id']]['date'] = date('YmdHis', $payflowRecurPayment['trxn_date']);
       }
     }
 
