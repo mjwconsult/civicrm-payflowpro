@@ -12,6 +12,18 @@ Learn more about installing CiviCRM extensions in the [CiviCRM Sysadmin Guide](h
 
 After enabling the extension you will need to go to Administer >> System Settings >> Payment Processors and create a Payment Processor that uses Payflow Pro
 
-## Known Issues
+## Recurring Contributions
 
-At Present the extension can create recurring contributions processes in the Payment Processor but does not use the APIs provided to check that subsequent transactions have been processed.
+#### PayflowPro.getRecurPaymentHistory
+
+To manually check transactions you can run the API4 PayflowPro.getRecurPaymentHistory job.
+
+#### PayflowPro.importLatestRecurPayments
+
+This is the equivalent of a webhook / IPN for other payment processors but PayflowPro doesn't implement
+that so we have to query ourselves on a schedule.
+
+This is automatically configured as a scheduled job (disabled).
+
+You will need to configure the `paymentProcessorID` parameter to match the paymentProcessor that you want to get recurring payments for.
+
