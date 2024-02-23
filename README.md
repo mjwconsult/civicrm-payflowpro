@@ -12,6 +12,17 @@ Learn more about installing CiviCRM extensions in the [CiviCRM Sysadmin Guide](h
 
 After enabling the extension you will need to go to Administer >> System Settings >> Payment Processors and create a Payment Processor that uses Payflow Pro
 
+## What is supported
+
+This extensions supports:
+- One-off payments.
+- Refunds.
+- Recurring payments:
+  - weekly, monthly, yearly. *Daily could be made to work but the code in this extension does not support currently*.
+  - Updating billing details.
+  - Updating credit card details.
+  - Cancel recurring payment.
+
 ## Recurring Contributions
 
 #### PayflowPro.getRecurPaymentHistory
