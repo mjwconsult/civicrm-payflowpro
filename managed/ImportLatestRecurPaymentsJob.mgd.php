@@ -9,6 +9,8 @@ return [
     'cleanup' => 'always',
     'update' => 'unmodified',
     'params' => [
+      'version' => 4,
+      'match' => ['name'],
       'values' => [
         'is_active' => FALSE,
         'name' => 'PayflowPro: Import latest recur Payments',
@@ -18,9 +20,6 @@ return [
         'api_action' => 'importLatestRecurPayments',
         'parameters' => 'version=4
 paymentProcessorID=1',
-      ],
-      'match' => [
-        'name',
       ],
     ],
   ],

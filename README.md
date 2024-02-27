@@ -25,6 +25,9 @@ This extensions supports:
 
 ## Recurring Contributions
 
+Note: If using test mode you might need to enable the setting "In test mode complete transactions pending settlement." to see contributions in CiviCRM be Completed.
+
+
 #### PayflowPro.getRecurPaymentHistory
 
 To manually check transactions you can run the API4 PayflowPro.getRecurPaymentHistory job.
