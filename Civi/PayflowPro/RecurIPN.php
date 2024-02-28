@@ -98,7 +98,7 @@ class RecurIPN {
 
         // Since FISERV doesn't go from settlement pending to completed in test mode we can simulate (skip) that
         // by setting Pending = Completed in this case.
-        if (\Civi::settings()->get('payflowpro_testmodesettlement')) {
+        if ($this->getPaymentProcessor()->getIsTestMode() && \Civi::settings()->get('payflowpro_testmodesettlement')) {
           if ($payflowRecurPayment['status_id:name'] === 'Pending' && $payflowRecurPayment['P_TRANSTATE'] === 6) {
             // "settlement pending" we will treat as "Completed"
             $payflowRecurPayment['status_id:name'] = 'Completed';
