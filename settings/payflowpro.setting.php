@@ -9,7 +9,7 @@
  +--------------------------------------------------------------------+
  */
 
-use CRM_Stripe_ExtensionUtil as E;
+use CRM_Payflowpro_ExtensionUtil as E;
 
 return [
   'payflowpro_testmodesettlement' => [
