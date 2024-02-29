@@ -1,6 +1,6 @@
 <?php
 
-use CRM_AdvancedEvents_ExtensionUtil as E;
+use CRM_Payflowpro_ExtensionUtil as E;
 
 return [
   [
