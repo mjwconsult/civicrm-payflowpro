@@ -502,6 +502,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       // Check if amount has actually changed!
       if (Money::of($existingRecur['amount'], mb_strtoupper($existingRecur['currency']))
         ->isAmountAndCurrencyEqualTo(Money::of($propertyBag->getAmount(), $propertyBag->getCurrency()))) {
+        // @todo: Don't need to throw exception. Return FALSE + message
         throw new PaymentProcessorException('Amount is the same as before!');
       }
 

@@ -21,7 +21,7 @@ class Check {
   /**
    * @var string
    */
-  const MIN_VERSION_MJWSHARED = '1.2.17';
+  const MIN_VERSION_MJWSHARED = '1.2.22';
   const MIN_VERSION_FIREWALL = '1.5.9';
 
   /**
@@ -40,10 +40,9 @@ class Check {
 
   /**
    * @return array
-   * @throws \CiviCRM_API3_Exception
    */
   public function checkRequirements() {
-    // $this->checkExtensionMjwshared();
+    $this->checkExtensionMjwshared();
     $this->checkCURLOpts();
     return $this->messages;
   }
@@ -53,7 +52,7 @@ class Check {
    * @param string $minVersion
    * @param string $actualVersion
    */
-  private function requireExtensionMinVersion($extensionName, $minVersion, $actualVersion) {
+  private function requireExtensionMinVersion(string $extensionName, string $minVersion, string $actualVersion) {
     $actualVersionModified = $actualVersion;
     if (substr($actualVersion, -4) === '-dev') {
       $message = new \CRM_Utils_Check_Message(
@@ -93,7 +92,7 @@ class Check {
   }
 
   /**
-   * @throws \CiviCRM_API3_Exception
+   * @throws \CRM_Core_Exception
    */
   private function checkExtensionMjwshared() {
     // mjwshared: required. Requires min version

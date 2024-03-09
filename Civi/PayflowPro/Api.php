@@ -5,6 +5,10 @@ namespace Civi\PayflowPro;
 use Civi\Payment\Exception\PaymentProcessorException;
 use CRM_Payflowpro_ExtensionUtil as E;
 
+/**
+ * This implements an abstraction layer for the PayflowPro API
+ * used by CRM_Core_Payment_PayflowPro and \Civi\PayflowPro\RecurIPN
+ */
 class Api {
 
   /**
