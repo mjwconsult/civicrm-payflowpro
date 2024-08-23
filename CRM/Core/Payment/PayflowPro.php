@@ -150,7 +150,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'STATE' => urlencode($propertyBag->getBillingStateProvince()),
         'ZIP' => urlencode($propertyBag->getBillingPostalCode()),
         'COUNTRY' => urlencode($propertyBag->getBillingCountry()),
-        'EMAIL' => $propertyBag->getEmail(),
+        'EMAIL' => $propertyBag->has('email') ? $propertyBag->getEmail() : '',
         'CUSTIP' => urlencode($paymentParams['ip_address']),
         'COMMENT1' => urlencode($paymentParams['contributionType_accounting_code']),
         'COMMENT2' => $this->_paymentProcessor['is_test'] ? 'test' : 'live',
