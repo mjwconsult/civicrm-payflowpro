@@ -55,16 +55,25 @@ class Check {
   private function requireExtensionMinVersion(string $extensionName, string $minVersion, string $actualVersion) {
     $actualVersionModified = $actualVersion;
     if (substr($actualVersion, -4) === '-dev') {
-      $message = new \CRM_Utils_Check_Message(
-        __FUNCTION__ . $extensionName . E::SHORT_NAME . '_requirements_dev',
-        E::ts('You are using a development version of %1 extension.',
-          [1 => $extensionName]),
-        E::ts('%1: Development version', [1 => $extensionName]),
-        \Psr\Log\LogLevel::WARNING,
-        'fa-code'
-      );
-      $this->messages[] = $message;
       $actualVersionModified = substr($actualVersion, 0, -4);
+      $devMessageAlreadyDefined = FALSE;
+      foreach ($this->messages as $message) {
+        if ($message->getName() === __FUNCTION__ . $extensionName . '_requirements_dev') {
+          // Another extension already generated the "Development version" message for this extension
+          $devMessageAlreadyDefined = TRUE;
+        }
+      }
+      if (!$devMessageAlreadyDefined) {
+        $message = new \CRM_Utils_Check_Message(
+          __FUNCTION__ . $extensionName . '_requirements_dev',
+          E::ts('You are using a development version of %1 extension.',
+            [1 => $extensionName]),
+          E::ts('%1: Development version', [1 => $extensionName]),
+          \Psr\Log\LogLevel::WARNING,
+          'fa-code'
+        );
+        $this->messages[] = $message;
+      }
     }
 
     if (version_compare($actualVersionModified, $minVersion) === -1) {
