@@ -45,7 +45,7 @@ class RecurIPN {
     $contributionRecurApi = ContributionRecur::get(FALSE)
       ->addWhere('is_test', '=', $this->getPaymentProcessor()->getIsTestMode())
       ->addWhere('payment_processor_id', '=', $this->paymentProcessorID);
-    if (!empty($this->recurProfileID)) {
+    if (!empty($recurProfileIDs)) {
       $contributionRecurApi->addWhere('processor_id', 'IN', $recurProfileIDs);
     }
     $contributionRecurs = $contributionRecurApi->execute();
