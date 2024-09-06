@@ -12,6 +12,7 @@
 
 use Brick\Money\Money;
 use Civi\Api4\ContributionRecur;
+use Civi\Api4\PayflowPro;
 use Civi\PayflowPro\Api;
 use Civi\Payment\Exception\PaymentProcessorException;
 use Civi\Payment\PropertyBag;
@@ -498,6 +499,17 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         ->addWhere('id', '=', $propertyBag->getContributionRecurID())
         ->execute()
         ->first();
+
+      // Check what info PayflowPro currently holds about the subscription.
+      $payflowSubscriptionDetails = PayflowPro::getRecurPaymentHistory(FALSE)
+        ->setPaymentProcessorID($this->getID())
+        ->setRecurProfileID($existingRecur['processor_id'])
+        ->setPaymentHistoryType('N')
+        ->execute()
+        ->first();
+      if (isset($payflowSubscriptionDetails['amount']) && is_numeric($payflowSubscriptionDetails['amount'])) {
+        $existingRecur['amount'] = $payflowSubscriptionDetails['amount'];
+      }
 
       // Check if amount has actually changed!
       if (Money::of($existingRecur['amount'], mb_strtoupper($existingRecur['currency']))

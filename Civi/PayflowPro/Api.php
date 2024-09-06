@@ -261,8 +261,16 @@ class Api {
     \Civi::log($channel)->$level($prefix . $message);
   }
 
+  /**
+   * @param string $recurProfileID
+   * @param string $paymentHistoryType
+   *
+   * @return array
+   * @throws \Civi\Payment\Exception\PaymentProcessorException
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   */
   public function getRecurPaymentHistory(string $recurProfileID, string $paymentHistoryType = 'Y') {
-    // Call the API to refund.
+    // Call the API to get the information about the recurring subscription.
     $payflowApi = $this;
     $payflow_query_array = $payflowApi->getQueryArrayAuth();
     $payflow_query_array['ACTION'] = 'I';
@@ -291,26 +299,32 @@ class Api {
      */
 
     $keyMap = [
-      'P_PNREF' => [
+      'PNREF' => [
         'key' => 'trxn_id',
         'type' => 'String',
       ],
-      'P_TRANSTIME' => [
+      'TRANSTIME' => [
+        // This is in format 21-May-04 04:47 that strtotime can parse.
         'key' => 'trxn_date',
         'type' => 'Timestamp',
       ],
-      'P_TRANSTATE' => [
+      'TRANSTATE' => [
         'key' => 'status_id:name',
         'type' => 'Status',
       ],
-      'P_TENDER' => [
+      'TENDER' => [
         'key' => 'payment_method',
         'type' => 'String',
       ],
-      'P_AMT' => [
+      'AMT' => [
         'key' => 'amount',
         'type' => 'Float',
       ],
+      'NEXTPAYMENT' => [
+        // This is in format 08302024 ie. MdY that strtotime can't parse..
+        'key' => 'next_sched_contribution_date',
+        'type' => 'NextPaymentFormat',
+      ]
     ];
 
     // Result is 0 (ok) since we got here
@@ -330,10 +344,28 @@ class Api {
       // - AMT: Amount (eg. 1.00)
       foreach ($keyMap as $srcKey => $dest) {
         if (str_contains($key, $srcKey)) {
-          $paymentID = substr($key, strlen($srcKey));
+          // Historical payments are prefixed with "P_" and suffixed with the payment ID.
+          // So eg. P_XX2 parameters all represent payment 2 and P_XX1 represent payment 1.
+          // But XX parameters represent a current value for the subscription - eg. AMT.
+          if (str_starts_with($key, 'P_')) {
+            $paymentID = filter_var($key, FILTER_SANITIZE_NUMBER_INT);
+            $baseAPIKey = substr($key, 2, strlen($key) - strlen($paymentID) - 2);
+          }
+          else {
+            $paymentID = 0;
+            $baseAPIKey = $key;
+          }
+
           switch ($dest['type']) {
             case 'Timestamp':
               $paymentsByID[$paymentID][$dest['key']] = strtotime($value);
+              break;
+
+            case 'NextPaymentFormat':
+              if ($baseAPIKey === 'NEXTPAYMENT') {
+                $timestamp = \DateTime::createFromFormat('mdY', $value)->getTimestamp();
+                $paymentsByID[$paymentID][$dest['key']] = $timestamp;
+              }
               break;
 
             case 'Status':
@@ -375,8 +407,9 @@ class Api {
       }
     }
     foreach ($paymentsByID as $id => $detail) {
-      $paymentsByDate[$paymentsByID[$id]['trxn_date']] = $detail;
-      $paymentsByDate[$paymentsByID[$id]['trxn_date']]['id'] = $id;
+      $date = $paymentsByID[$id]['trxn_date'] ?? $paymentsByID[$id]['next_sched_contribution_date'];
+      $paymentsByDate[$date] = $detail;
+      $paymentsByDate[$date]['id'] = $id;
     }
 
     return $paymentsByDate ?? [];
