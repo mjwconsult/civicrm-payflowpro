@@ -21,7 +21,7 @@ class Check {
   /**
    * @var string
    */
-  const MIN_VERSION_MJWSHARED = '1.2.17';
+  const MIN_VERSION_MJWSHARED = '1.2.22';
   const MIN_VERSION_FIREWALL = '1.5.9';
 
   /**
@@ -40,10 +40,9 @@ class Check {
 
   /**
    * @return array
-   * @throws \CiviCRM_API3_Exception
    */
   public function checkRequirements() {
-    // $this->checkExtensionMjwshared();
+    $this->checkExtensionMjwshared();
     $this->checkCURLOpts();
     return $this->messages;
   }
@@ -53,19 +52,28 @@ class Check {
    * @param string $minVersion
    * @param string $actualVersion
    */
-  private function requireExtensionMinVersion($extensionName, $minVersion, $actualVersion) {
+  private function requireExtensionMinVersion(string $extensionName, string $minVersion, string $actualVersion) {
     $actualVersionModified = $actualVersion;
     if (substr($actualVersion, -4) === '-dev') {
-      $message = new \CRM_Utils_Check_Message(
-        __FUNCTION__ . $extensionName . E::SHORT_NAME . '_requirements_dev',
-        E::ts('You are using a development version of %1 extension.',
-          [1 => $extensionName]),
-        E::ts('%1: Development version', [1 => $extensionName]),
-        \Psr\Log\LogLevel::WARNING,
-        'fa-code'
-      );
-      $this->messages[] = $message;
       $actualVersionModified = substr($actualVersion, 0, -4);
+      $devMessageAlreadyDefined = FALSE;
+      foreach ($this->messages as $message) {
+        if ($message->getName() === __FUNCTION__ . $extensionName . '_requirements_dev') {
+          // Another extension already generated the "Development version" message for this extension
+          $devMessageAlreadyDefined = TRUE;
+        }
+      }
+      if (!$devMessageAlreadyDefined) {
+        $message = new \CRM_Utils_Check_Message(
+          __FUNCTION__ . $extensionName . '_requirements_dev',
+          E::ts('You are using a development version of %1 extension.',
+            [1 => $extensionName]),
+          E::ts('%1: Development version', [1 => $extensionName]),
+          \Psr\Log\LogLevel::WARNING,
+          'fa-code'
+        );
+        $this->messages[] = $message;
+      }
     }
 
     if (version_compare($actualVersionModified, $minVersion) === -1) {
@@ -93,7 +101,7 @@ class Check {
   }
 
   /**
-   * @throws \CiviCRM_API3_Exception
+   * @throws \CRM_Core_Exception
    */
   private function checkExtensionMjwshared() {
     // mjwshared: required. Requires min version

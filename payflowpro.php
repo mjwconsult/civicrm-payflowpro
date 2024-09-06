@@ -35,7 +35,7 @@ function payflowpro_civicrm_enable() {
 /**
  * Implements hook_civicrm_check().
  *
- * @throws \CiviCRM_API3_Exception
+ * @throws \CRM_Core_Exception
  */
 function payflowpro_civicrm_check(&$messages) {
   $checks = new \Civi\PayflowPro\Check($messages);
