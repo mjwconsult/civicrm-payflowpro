@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<ruleset name="CiviCRM_Standard">
+	<description>PSR12 with tabs instead of spaces.</description>
+	<file>.</file>
+	<arg name="extensions" value="php,module,inc,install,test,profile,theme,css,info,txt,md,yml"/>
+	<rule ref="Drupal" />
+	<arg name="tab-width" value="2"/>
+	<rule ref="Generic.WhiteSpace.ScopeIndent">
+		<properties>
+			<property name="indent" value="2"/>
+		</properties>
+	</rule>
+</ruleset>
