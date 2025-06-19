@@ -137,9 +137,6 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'TENDER' => 'C',
         // A - Authorization, S - Sale.
         'TRXTYPE' => 'S',
-        'ACCT' => urlencode($paymentParams['credit_card_number']),
-        'CVV2' => $paymentParams['cvv2'],
-        'EXPDATE' => urlencode(sprintf('%02d', (int) $paymentParams['month']) . substr($paymentParams['year'], 2, 2)),
         'ACCTTYPE' => urlencode($paymentParams['credit_card_type']),
         // @todo Do we need to machinemoney format? ie. 1024.00 or is 1024 ok for API?
         'AMT' => \Civi::format()->machineMoney($propertyBag->getAmount()),
@@ -161,6 +158,25 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         'BILLTOCOUNTRY' => urlencode($propertyBag->getBillingCountry()),
       ]
     );
+
+    // Card on file
+    $paymentToken = \Civi\Api4\PaymentToken::get(FALSE)
+      ->addWhere('contact_id', '=', $propertyBag->getContactID())
+      ->addWhere('payment_processor_id', '=', $this->getPaymentProcessor()['id'])
+      ->execute()
+      ->first();
+
+    if (!empty($paymentToken)) {
+      $token = json_decode($paymentToken['token'], TRUE);
+      $payflow_query_array['CARDONFILE'] = $propertyBag->getIsRecur() ? 'MITR': 'MITU';
+      $payflow_query_array['TXID'] = $token['TXID'];
+      $payflow_query_array['ORIGID'] = $token['ORIGID'];
+    }
+    else {
+      $payflow_query_array['ACCT'] = urlencode($paymentParams['credit_card_number']);
+      $payflow_query_array['CVV2'] = $paymentParams['cvv2'];
+      $payflow_query_array['EXPDATE'] = urlencode(sprintf('%02d', (int) $paymentParams['month']) . substr($paymentParams['year'], 2, 2));
+    }
 
     if ($paymentParams['installments'] == 1) {
       $paymentParams['is_recur'] = FALSE;
@@ -294,6 +310,18 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         $result = $this->setStatusPaymentCompleted([]);
         // 'trxn_id' is varchar(255) field. returned value is length 12
         $result['trxn_id'] = ($nvpArray['PNREF'] ?? '') . ($nvpArray['TRXPNREF'] ?? '');
+
+        // Save card info for Card on File
+        if (!empty($nvpArray['TXID'])) {
+          \Civi\Api4\PaymentToken::create(FALSE)
+            ->addValue('contact_id', $propertyBag->getContactID())
+            ->addValue('payment_processor_id', $this->getPaymentProcessor()['id'])
+            ->addValue('token', json_encode(['ORIGID' => $result['trxn_id'], 'TXID' => $nvpArray['TXID']]))
+            ->addValue('expiry_date', urlencode(sprintf('%02d', (int) $paymentParams['month']) . substr($paymentParams['year'], 2, 2)))
+            ->addValue('masked_account_number', urlencode($paymentParams['credit_card_number']))
+            ->execute();
+        }
+
         return $result;
 
       case 1:
