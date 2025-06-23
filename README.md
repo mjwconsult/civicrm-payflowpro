@@ -41,3 +41,10 @@ This is automatically configured as a scheduled job (disabled).
 
 You will need to configure the `paymentProcessorID` parameter to match the paymentProcessor that you want to get recurring payments for.
 
+## Card on File
+
+- API docs: https://developer.paypal.com/api/nvp-soap/payflow/integration-guide/card-on-file
+- StackExchange discussion: https://stackoverflow.com/questions/70790830/using-paypal-payflow-card-on-file-feature-for-future-recharging-with-their-api
+
+
+
