@@ -28,4 +28,20 @@ return [
       ]
     ],
   ],
+  'payflowpro_cardonfile' => [
+    'name' => 'payflowpro_cardonfile',
+    'type' => 'Boolean',
+    'html_type' => 'checkbox',
+    'default' => 0,
+    'is_domain' => 1,
+    'is_contact' => 0,
+    'title' => E::ts('Enable Card-on-file functionality.'),
+    'description' => E::ts('Enable this to allow users to save their cards for future use.'),
+    'html_attributes' => [],
+    'settings_pages' => [
+      'payflowpro' => [
+        'weight' => 20,
+      ]
+    ],
+  ],
 ];
