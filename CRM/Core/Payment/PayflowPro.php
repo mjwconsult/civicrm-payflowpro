@@ -10,6 +10,8 @@
 +---------------------------------------------------------------------------+
  */
 
+use Civi\Api4\PaymentToken;
+use CRM_Payflowpro_ExtensionUtil as E;
 use Brick\Money\Money;
 use Civi\Api4\ContributionRecur;
 use Civi\Api4\PayflowPro;
@@ -159,12 +161,15 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       ]
     );
 
-    // Card on file
-    $paymentToken = \Civi\Api4\PaymentToken::get(FALSE)
-      ->addWhere('contact_id', '=', $propertyBag->getContactID())
-      ->addWhere('payment_processor_id', '=', $this->getPaymentProcessor()['id'])
-      ->execute()
-      ->first();
+    if ($propertyBag->has('paymentToken') && !empty($propertyBag->getPaymentToken())) {
+      // Card on file
+      $paymentToken = PaymentToken::get(FALSE)
+        ->addWhere('contact_id', '=', $propertyBag->getContactID())
+        ->addWhere('payment_processor_id', '=', $this->getPaymentProcessor()['id'])
+        ->addWhere('id', '=', $propertyBag->getPaymentToken())
+        ->execute()
+        ->first();
+    }
 
     if (!empty($paymentToken)) {
       $token = json_decode($paymentToken['token'], TRUE);
@@ -176,6 +181,10 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       $payflow_query_array['ACCT'] = urlencode($paymentParams['credit_card_number']);
       $payflow_query_array['CVV2'] = $paymentParams['cvv2'];
       $payflow_query_array['EXPDATE'] = urlencode(sprintf('%02d', (int) $paymentParams['month']) . substr($paymentParams['year'], 2, 2));
+      if ($propertyBag->has('save_payment_token') && !empty($propertyBag->getCustomProperty('save_payment_token'))) {
+        // Save card for future use. CITI = Cardholder "initial"
+        $payflow_query_array['CARDONFILE'] = 'CITI';
+      }
     }
 
     if ($paymentParams['installments'] == 1) {
@@ -312,13 +321,13 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
         $result['trxn_id'] = ($nvpArray['PNREF'] ?? '') . ($nvpArray['TRXPNREF'] ?? '');
 
         // Save card info for Card on File
-        if (!empty($nvpArray['TXID'])) {
-          \Civi\Api4\PaymentToken::create(FALSE)
+        if (!empty($nvpArray['TXID']) && $propertyBag->has('save_payment_token') && $propertyBag->getCustomProperty('save_payment_token')) {
+          PaymentToken::create(FALSE)
             ->addValue('contact_id', $propertyBag->getContactID())
             ->addValue('payment_processor_id', $this->getPaymentProcessor()['id'])
             ->addValue('token', json_encode(['ORIGID' => $result['trxn_id'], 'TXID' => $nvpArray['TXID']]))
-            ->addValue('expiry_date', urlencode(sprintf('%02d', (int) $paymentParams['month']) . substr($paymentParams['year'], 2, 2)))
-            ->addValue('masked_account_number', urlencode($paymentParams['credit_card_number']))
+            ->addValue('expiry_date', "{$paymentParams['year']}-{$paymentParams['month']}-01 00:00:00")
+            ->addValue('masked_account_number', CRM_Utils_System::mungeCreditCard($paymentParams['credit_card_number']))
             ->execute();
         }
 
@@ -685,7 +694,6 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
    * @return void
    */
   public function validatePaymentInstrument($values, &$errors) {
-
     // Check to see if we are processing a recurring contribution.
     if (array_key_exists('is_recur', $values) && $values['is_recur'] == TRUE) {
       // Make sure the frequency unit is not set to day as this has not been implemented yet.
@@ -695,7 +703,57 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
       }
     }
 
-    parent::validatePaymentInstrument($values, $errors);
+    $mandatoryFields = $this->getMandatoryFields();
+    if (isset($values['payment_token']) && ($values['payment_token'] != 0)) {
+      // If we have a payment token, we don't need card fields
+      unset($mandatoryFields['credit_card_number'], $mandatoryFields['cvv2'], $mandatoryFields['credit_card_exp_date']);
+    }
+    CRM_Core_Form::validateMandatoryFields($mandatoryFields, $values, $errors);
+    if (isset($values['payment_token']) && ($values['payment_token'] == 0)) {
+      // If we don't have a payment token - ie. we're using card details, we need to validate those details
+      CRM_Core_Payment_Form::validateCreditCard($values, $errors, $this->_paymentProcessor['id']);
+    }
+  }
+
+  protected function getCreditCardFormFields() {
+    $fields = parent::getCreditCardFormFields();
+    return $fields;
+  }
+
+
+  /**
+   * Set default values when loading the (payment) form
+   *
+   * @param \CRM_Core_Form $form
+   */
+  public function buildForm(&$form) {
+    // Get any saved cards for the current contact and payment processor
+    // and put them on the payment form with a select element so you can
+    // select "none" to enter new details or a saved card to use an existing one.
+    CRM_Core_Region::instance('billing-block-pre')->add([
+      'template' => E::path('templates/CRM/Core/BillingBlockPayflowPro.tpl'),
+      'weight' => -1,
+    ]);
+
+    if (empty(CRM_Core_Session::getLoggedInContactID())) {
+      // Can't save card details if no contact ID.
+      return FALSE;
+    }
+
+    $cards = PaymentToken::get(FALSE)
+      ->addSelect('id', 'masked_account_number', 'expiry_date')
+      ->addWhere('contact_id', '=', CRM_Core_Session::getLoggedInContactID())
+      ->addWhere('payment_processor_id', '=', $this->getPaymentProcessor()['id'])
+      ->execute();
+    foreach ($cards as $card) {
+      $listOfCards[$card['id']] = $card['masked_account_number'] . ' - ' . date('m/y', strtotime($card['expiry_date']));
+    }
+    if (!empty($listOfCards)) {
+      $form->add('select', 'payment_token', E::ts('Use Saved Card'),
+        ['0' => E::ts('- none -')] + $listOfCards, FALSE);
+    }
+    $form->add('checkbox', 'save_payment_token', E::ts('Save card details for future use?'));
+    return FALSE;
   }
 
 }

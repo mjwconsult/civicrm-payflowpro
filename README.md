@@ -17,6 +17,7 @@ After enabling the extension you will need to go to Administer >> System Setting
 This extensions supports:
 - One-off payments.
 - Refunds.
+- Card On File.
 - Recurring payments:
   - weekly, monthly, yearly. *Daily could be made to work but the code in this extension does not support currently*.
   - Updating billing details.
@@ -26,7 +27,6 @@ This extensions supports:
 ## Recurring Contributions
 
 Note: If using test mode you might need to enable the setting "In test mode complete transactions pending settlement." to see contributions in CiviCRM be Completed.
-
 
 #### PayflowPro.getRecurPaymentHistory
 
@@ -46,5 +46,9 @@ You will need to configure the `paymentProcessorID` parameter to match the payme
 - API docs: https://developer.paypal.com/api/nvp-soap/payflow/integration-guide/card-on-file
 - StackExchange discussion: https://stackoverflow.com/questions/70790830/using-paypal-payflow-card-on-file-feature-for-future-recharging-with-their-api
 
+When the PayflowPro card details are shown you will also see (if logged in):
+- Use Saved Card (a list of saved cards, if available)
+- Save card details for future use?
 
+![Saved Card UI](docs/images/savedcardfrontend.png)
 
