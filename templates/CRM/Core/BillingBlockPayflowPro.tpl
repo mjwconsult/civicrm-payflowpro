@@ -1,5 +1,5 @@
 {crmScope extensionKey='payflowpro'}
-  {if $form.payment_token}
+  {if isset($form.payment_token)}
   <div class="crm-section {$form.payment_token.name}-section">
     <div class="label">
         {$form.payment_token.label}
