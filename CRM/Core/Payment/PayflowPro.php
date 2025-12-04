@@ -86,7 +86,7 @@ class CRM_Core_Payment_PayflowPro extends CRM_Core_Payment {
   public function checkConfig() {
     $errorMsg = [];
     if (empty($this->_paymentProcessor['user_name'])) {
-      $errorMsg[] = ' ' . ts('Vendor ID is not set for this payment processor');
+      $errorMsg[] = ' ' . ts('Merchant login ID is not set for this payment processor');
     }
 
     if (empty($this->_paymentProcessor['url_site'])) {

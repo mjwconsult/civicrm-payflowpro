@@ -48,14 +48,16 @@
 
       function savedCardSelector() {
         const paymentTokenElement = document.querySelector('select#payment_token');
-        paymentTokenElement.addEventListener('change', (event) => {
-          updateCardFields();
-        });
+        if (paymentTokenElement) {
+          paymentTokenElement.addEventListener('change', (event) => {
+            updateCardFields();
+          });
+        }
       }
 
       function updateCardFields() {
         const paymentTokenElement = document.querySelector('select#payment_token');
-        if (paymentTokenElement.value == 0) {
+        if (!paymentTokenElement || paymentTokenElement.value == 0) {
           document.querySelector('input#credit_card_number').classList.add('required');
           document.querySelector('input#cvv2').classList.add('required');
           document.querySelector('select#credit_card_exp_date_m').classList.add('required');
