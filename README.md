@@ -1,3 +1,5 @@
+# MOVED TO https://lab.civicrm.org/extensions/payflowpro
+
 # Payflow Pro
 
 This extension provides an integration with PayPal's Payflow Pro service. It supports one time and recurring payments from CiviCRM.
